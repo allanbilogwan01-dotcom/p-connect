@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
 import { 
   Users, UserCheck, Clock, AlertCircle, TrendingUp, 
-  Activity, Calendar, ArrowUpRight, ArrowDownRight
+  Activity, Calendar, ArrowUpRight, Plus, LogIn, UserPlus, Link2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getDashboardStats, getAnalyticsData, getActiveSessions, getVisitors, getPDLs } from '@/lib/localStorage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const container = {
@@ -23,7 +25,7 @@ const item = {
 };
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const stats = getDashboardStats();
   const analytics = getAnalyticsData();
   const activeSessions = getActiveSessions();
@@ -74,6 +76,37 @@ export default function DashboardPage() {
     { name: 'Conjugal', value: analytics.weeklyData.reduce((a, b) => a + b.conjugal, 0), color: 'hsl(45, 93%, 58%)' },
   ];
 
+  const quickActions = [
+    { 
+      label: 'New Visitor', 
+      icon: UserPlus, 
+      path: '/visitors', 
+      color: 'bg-success/10 text-success hover:bg-success/20',
+      permission: 'manage_visitors',
+    },
+    { 
+      label: 'Add PDL', 
+      icon: Plus, 
+      path: '/pdl', 
+      color: 'bg-info/10 text-info hover:bg-info/20',
+      permission: 'manage_pdl',
+    },
+    { 
+      label: 'Time In/Out', 
+      icon: LogIn, 
+      path: '/visitation', 
+      color: 'bg-primary/10 text-primary hover:bg-primary/20',
+      permission: 'operate_visitation',
+    },
+    { 
+      label: 'Link Kin', 
+      icon: Link2, 
+      path: '/kin-dalaw', 
+      color: 'bg-warning/10 text-warning hover:bg-warning/20',
+      permission: 'create_kin_dalaw',
+    },
+  ];
+
   return (
     <motion.div
       variants={container}
@@ -96,6 +129,24 @@ export default function DashboardPage() {
             <Activity className="w-3 h-3 mr-1" />
             {stats.active_sessions} Active Session{stats.active_sessions !== 1 ? 's' : ''}
           </Badge>
+        </div>
+      </motion.div>
+
+      {/* Quick Actions */}
+      <motion.div variants={item}>
+        <h3 className="text-sm font-medium text-muted-foreground mb-3">Quick Actions</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {quickActions.filter(action => hasPermission(action.permission)).map((action) => (
+            <Link key={action.path} to={action.path}>
+              <Button 
+                variant="ghost" 
+                className={`w-full h-auto py-4 flex flex-col items-center gap-2 ${action.color} transition-all`}
+              >
+                <action.icon className="w-6 h-6" />
+                <span className="text-sm font-medium">{action.label}</span>
+              </Button>
+            </Link>
+          ))}
         </div>
       </motion.div>
 
@@ -218,11 +269,16 @@ export default function DashboardPage() {
         {/* Active Sessions */}
         <motion.div variants={item}>
           <Card className="glass-card">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Clock className="w-5 h-5 text-primary" />
                 Active Sessions
               </CardTitle>
+              <Link to="/visitation">
+                <Button variant="ghost" size="sm" className="text-primary">
+                  View All
+                </Button>
+              </Link>
             </CardHeader>
             <CardContent>
               {activeSessions.length === 0 ? (
