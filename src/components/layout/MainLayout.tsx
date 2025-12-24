@@ -4,12 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, Users, UserPlus, Link2, Clock, 
   FileText, BarChart3, Settings, LogOut, Menu, X,
-  Shield, ChevronDown, Bell
+  Shield, ChevronDown
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { getSettings } from '@/lib/localStorage';
 import { cn } from '@/lib/utils';
+import { NotificationBell } from '@/components/NotificationCenter';
 
 interface NavItem {
   icon: React.ElementType;
@@ -74,8 +75,8 @@ export default function MainLayout() {
                 exit={{ opacity: 0 }}
                 className="flex items-center gap-3"
               >
-                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-primary" />
+                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center overflow-hidden">
+                  <img src="/watchguard-icon.svg" alt="WatchGuard" className="w-8 h-8" />
                 </div>
                 <div>
                   <h1 className="font-bold text-foreground gold-text">WatchGuard</h1>
@@ -177,8 +178,8 @@ export default function MainLayout() {
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-sidebar border-b border-sidebar-border z-50 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-            <Shield className="w-6 h-6 text-primary" />
+          <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center overflow-hidden">
+            <img src="/watchguard-icon.svg" alt="WatchGuard" className="w-8 h-8" />
           </div>
           <span className="font-bold gold-text">WatchGuard</span>
         </div>
@@ -265,10 +266,7 @@ export default function MainLayout() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5 text-muted-foreground" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
-            </Button>
+            <NotificationBell />
           </div>
         </header>
 

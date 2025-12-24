@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FileText, Download, Calendar, Filter, 
-  BarChart2, Users, Clock, TrendingUp
+  BarChart2, Users, Clock, TrendingUp, Printer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,18 +15,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { 
   getVisitSessions, getVisitors, getPDLs, 
   getDashboardStats 
 } from '@/lib/localStorage';
+import { DailyVisitorLog } from '@/components/DailyVisitorLog';
 import type { VisitSession } from '@/types';
 
 export default function ReportsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [reportType, setReportType] = useState('visits');
+  const [showPrintLog, setShowPrintLog] = useState(false);
+  const [printDate, setPrintDate] = useState(new Date().toISOString().split('T')[0]);
+  const printRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
   const sessions = getVisitSessions();
@@ -41,6 +51,36 @@ export default function ReportsPage() {
     if (dateTo && sessionDate > dateTo) return false;
     return true;
   });
+
+  const handlePrintLog = () => {
+    if (!printRef.current) return;
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Daily Visitor Log - ${printDate}</title>
+            <style>
+              body { margin: 0; padding: 20px; }
+              @media print {
+                body { padding: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            ${printRef.current.innerHTML}
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+    }
+    setShowPrintLog(false);
+  };
 
   const generateCSV = () => {
     let csvContent = '';
@@ -91,7 +131,7 @@ export default function ReportsPage() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `jail-is-${reportType}-report-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `watchguard-${reportType}-report-${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
 
     toast({
@@ -155,6 +195,10 @@ export default function ReportsPage() {
             Generate and export facility reports
           </p>
         </div>
+        <Button onClick={() => setShowPrintLog(true)} variant="outline" className="gap-2">
+          <Printer className="w-5 h-5" />
+          Print Daily Log
+        </Button>
       </div>
 
       {/* Filters */}
@@ -201,6 +245,38 @@ export default function ReportsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Print Daily Log Dialog */}
+      <Dialog open={showPrintLog} onOpenChange={setShowPrintLog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto glass-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="w-5 h-5 text-primary" />
+              Print Daily Visitor Log
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Label>Select Date:</Label>
+              <Input
+                type="date"
+                value={printDate}
+                onChange={(e) => setPrintDate(e.target.value)}
+                className="input-field w-48"
+              />
+              <Button onClick={handlePrintLog} className="btn-scanner">
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+            </div>
+            <div className="overflow-x-auto border border-border rounded-lg">
+              <div ref={printRef}>
+                <DailyVisitorLog date={new Date(printDate)} />
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Stats */}
       {reportType === 'visits' && (
