@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Save, RotateCcw, Building, Users, Scan, 
-  Database, Shield, AlertTriangle
+  Database, Shield, AlertTriangle, Cloud, ExternalLink, Info
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +21,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { getSettings, setSettings, resetStorage, createAuditLog } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,8 +42,28 @@ export default function SettingsPage() {
   const [settings, setLocalSettings] = useState<SystemSettings>(getSettings());
   const [hasChanges, setHasChanges] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [cloudProvider, setCloudProvider] = useState<string>('none');
+  const [cloudConnected, setCloudConnected] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const handleCloudConnect = () => {
+    if (cloudProvider === 'none') {
+      toast({
+        title: 'Select Provider',
+        description: 'Please select a cloud provider first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Simulate connection - in real app this would authenticate with the provider
+    toast({
+      title: 'Cloud Connection',
+      description: `Connecting to ${cloudProvider}... This feature requires backend integration.`,
+    });
+    setCloudConnected(true);
+  };
 
   const updateSetting = <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }));
@@ -241,6 +268,72 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Cloud Sync */}
+      <Card className="glass-card border-info/30">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Cloud className="w-5 h-5 text-info" />
+            Cloud Storage & Sync
+            <Badge variant="outline" className="ml-2 text-xs">Beta</Badge>
+          </CardTitle>
+          <CardDescription>Connect to cloud storage for data backup and multi-device sync</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-info/10 border border-info/30">
+            <Info className="w-4 h-4 text-info flex-shrink-0" />
+            <p className="text-sm text-muted-foreground">
+              Cloud sync allows you to backup your data and access it from multiple devices. 
+              Select your preferred cloud provider below.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Cloud Provider</Label>
+              <Select value={cloudProvider} onValueChange={setCloudProvider}>
+                <SelectTrigger className="input-field">
+                  <SelectValue placeholder="Select provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (Local Only)</SelectItem>
+                  <SelectItem value="supabase">Supabase</SelectItem>
+                  <SelectItem value="firebase">Firebase</SelectItem>
+                  <SelectItem value="aws">AWS S3</SelectItem>
+                  <SelectItem value="azure">Azure Blob</SelectItem>
+                  <SelectItem value="gcp">Google Cloud</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="flex items-end gap-2">
+              <Button 
+                onClick={handleCloudConnect}
+                className={cloudConnected ? 'bg-success hover:bg-success/90' : 'btn-scanner'}
+                disabled={cloudProvider === 'none'}
+              >
+                {cloudConnected ? (
+                  <>
+                    <Shield className="w-4 h-4 mr-2" />
+                    Connected
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    Connect
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+          
+          {cloudProvider !== 'none' && (
+            <p className="text-xs text-muted-foreground">
+              Note: Cloud integration requires additional setup. Contact your system administrator for configuration.
+            </p>
+          )}
         </CardContent>
       </Card>
 

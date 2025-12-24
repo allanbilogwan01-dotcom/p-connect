@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F5D547"/>
+      <stop offset="50%" style="stop-color:#D4A533"/>
+      <stop offset="100%" style="stop-color:#B8931F"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield shape -->
+  <path d="M50 5 L90 20 L90 45 C90 70 70 90 50 95 C30 90 10 70 10 45 L10 20 Z" 
+        fill="url(#goldGradient)" 
+        stroke="#1a1f2e" 
+        stroke-width="2"/>
+  <!-- Inner shield -->
+  <path d="M50 12 L82 24 L82 44 C82 65 65 82 50 87 C35 82 18 65 18 44 L18 24 Z" 
+        fill="#0c1220" 
+        stroke="#D4A533" 
+        stroke-width="1"/>
+  <!-- Eye/Watch symbol -->
+  <ellipse cx="50" cy="45" rx="22" ry="14" fill="none" stroke="#D4A533" stroke-width="2"/>
+  <circle cx="50" cy="45" r="8" fill="#D4A533"/>
+  <circle cx="50" cy="45" r="4" fill="#0c1220"/>
+  <!-- Guard lines -->
+  <path d="M28 65 L50 75 L72 65" fill="none" stroke="#D4A533" stroke-width="2" stroke-linecap="round"/>
+</svg>
