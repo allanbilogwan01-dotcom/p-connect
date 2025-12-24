@@ -32,6 +32,7 @@ import {
 } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
+import { useCameraDevices } from '@/components/CameraSelector';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
@@ -59,6 +60,7 @@ export default function VisitationPage() {
   const settings = getSettings();
 
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
+  const { devices, selectedDevice, setSelectedDevice } = useCameraDevices();
 
   useEffect(() => {
     loadModels();
@@ -77,8 +79,10 @@ export default function VisitationPage() {
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
       
+      const cameraId = selectedDevice || { facingMode: "environment" };
+      
       await scanner.start(
-        { facingMode: "environment" },
+        cameraId,
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
           handleCodeScanned(decodedText, 'qr_scan');
@@ -104,7 +108,7 @@ export default function VisitationPage() {
     setScannerActive(false);
   };
 
-  const startFaceScanner = async () => {
+  const startFaceScanner = useCallback(async () => {
     if (!isLoaded) {
       toast({
         title: 'Loading',
@@ -114,9 +118,13 @@ export default function VisitationPage() {
     }
     
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 }
-      });
+      const constraints: MediaStreamConstraints = {
+        video: selectedDevice 
+          ? { deviceId: { exact: selectedDevice }, width: 640, height: 480 }
+          : { facingMode: 'user', width: 640, height: 480 }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -124,7 +132,6 @@ export default function VisitationPage() {
       }
       setFaceScanning(true);
       setFaceMessage('Scanning face...');
-      runFaceDetection();
     } catch (err) {
       toast({
         title: 'Camera Error',
@@ -132,7 +139,7 @@ export default function VisitationPage() {
         variant: 'destructive',
       });
     }
-  };
+  }, [isLoaded, selectedDevice, toast]);
 
   const stopFaceScanner = useCallback(() => {
     if (streamRef.current) {
@@ -317,7 +324,7 @@ export default function VisitationPage() {
     });
 
     toast({
-      title: 'Time In Recorded',
+      title: 'TIME IN RECORDED',
       description: `${foundVisitor.first_name} ${foundVisitor.last_name} has been timed in.`,
     });
 
@@ -357,7 +364,7 @@ export default function VisitationPage() {
 
     const visitor = visitors.find(v => v.id === targetSession.visitor_id);
     toast({
-      title: 'Time Out Recorded',
+      title: 'TIME OUT RECORDED',
       description: `${visitor?.first_name} ${visitor?.last_name} has been timed out.`,
     });
 
@@ -398,9 +405,9 @@ export default function VisitationPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Badge className="status-active text-sm px-4 py-2">
+          <Badge className="status-active text-sm px-4 py-2 uppercase">
             <Clock className="w-4 h-4 mr-2" />
-            {activeSessions.length} Active Session{activeSessions.length !== 1 ? 's' : ''}
+            {activeSessions.length} ACTIVE SESSION{activeSessions.length !== 1 ? 'S' : ''}
           </Badge>
         </div>
       </div>
@@ -410,7 +417,7 @@ export default function VisitationPage() {
         <div className="lg:col-span-2 space-y-6">
           <Card className="glass-card">
             <CardHeader>
-              <CardTitle className="text-lg">Visitor Identification</CardTitle>
+              <CardTitle className="text-lg">VISITOR IDENTIFICATION</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Identification Methods */}
@@ -418,15 +425,15 @@ export default function VisitationPage() {
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="manual" className="flex items-center gap-2">
                     <Search className="w-4 h-4" />
-                    Manual ID
+                    MANUAL ID
                   </TabsTrigger>
                   <TabsTrigger value="qr" className="flex items-center gap-2">
                     <QrCode className="w-4 h-4" />
-                    QR Scan
+                    QR SCAN
                   </TabsTrigger>
                   <TabsTrigger value="face" className="flex items-center gap-2">
                     <Scan className="w-4 h-4" />
-                    Face Scan
+                    FACE SCAN
                   </TabsTrigger>
                 </TabsList>
                 
@@ -452,6 +459,25 @@ export default function VisitationPage() {
                 
                 <TabsContent value="qr" className="mt-4">
                   <div className="space-y-4">
+                    {/* Camera Selector for QR */}
+                    {devices.length > 1 && !scannerActive && (
+                      <div className="flex justify-center">
+                        <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                          <SelectTrigger className="w-64 h-9 text-sm">
+                            <Camera className="w-4 h-4 mr-2" />
+                            <SelectValue placeholder="Select camera" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {devices.map((device, idx) => (
+                              <SelectItem key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Camera ${idx + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    
                     {scannerActive ? (
                       <div className="space-y-4">
                         <div id="qr-reader" className="scanner-frame mx-auto max-w-sm rounded-xl overflow-hidden" />
@@ -460,7 +486,7 @@ export default function VisitationPage() {
                           onClick={stopQRScanner}
                           className="w-full"
                         >
-                          Stop Scanner
+                          STOP SCANNER
                         </Button>
                       </div>
                     ) : (
@@ -469,7 +495,7 @@ export default function VisitationPage() {
                         className="w-full btn-scanner h-24 text-lg"
                       >
                         <QrCode className="w-8 h-8 mr-3" />
-                        Start QR Scanner
+                        START QR SCANNER
                       </Button>
                     )}
                   </div>
@@ -481,6 +507,25 @@ export default function VisitationPage() {
                       <div className="text-center py-8">
                         <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-2" />
                         <p className="text-sm text-muted-foreground">Loading face detection...</p>
+                      </div>
+                    )}
+                    
+                    {/* Camera Selector for Face */}
+                    {devices.length > 1 && !faceScanning && !faceLoading && (
+                      <div className="flex justify-center">
+                        <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                          <SelectTrigger className="w-64 h-9 text-sm">
+                            <Camera className="w-4 h-4 mr-2" />
+                            <SelectValue placeholder="Select camera" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {devices.map((device, idx) => (
+                              <SelectItem key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Camera ${idx + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                     
@@ -503,10 +548,9 @@ export default function VisitationPage() {
                             <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary rounded-br-lg" />
                           </div>
                           <div className="absolute bottom-4 left-0 right-0 text-center">
-                            <Badge className="bg-background/80 text-foreground">
-                              <Scan className="w-3 h-3 mr-1 animate-pulse" />
+                            <span className="bg-background/80 text-foreground text-sm px-3 py-1 rounded-full">
                               {faceMessage}
-                            </Badge>
+                            </span>
                           </div>
                         </div>
                         <Button 
@@ -514,7 +558,7 @@ export default function VisitationPage() {
                           onClick={stopFaceScanner}
                           className="w-full"
                         >
-                          Stop Face Scanner
+                          STOP SCANNER
                         </Button>
                       </div>
                     ) : !faceLoading && (
@@ -523,15 +567,15 @@ export default function VisitationPage() {
                         className="w-full btn-scanner h-24 text-lg"
                         disabled={!isLoaded}
                       >
-                        <Camera className="w-8 h-8 mr-3" />
-                        Start Face Recognition
+                        <Scan className="w-8 h-8 mr-3" />
+                        START FACE SCANNER
                       </Button>
                     )}
                   </div>
                 </TabsContent>
               </Tabs>
 
-              {/* Found Visitor */}
+              {/* Found Visitor Info */}
               <AnimatePresence>
                 {foundVisitor && (
                   <motion.div
@@ -541,42 +585,38 @@ export default function VisitationPage() {
                     className="p-4 rounded-xl bg-success/10 border border-success/30"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-20 h-20 rounded-xl overflow-hidden bg-muted flex-shrink-0">
-                        {foundVisitor.photo_url ? (
-                          <img 
-                            src={foundVisitor.photo_url} 
-                            alt="Visitor" 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <User className="w-10 h-10 text-muted-foreground/50" />
-                          </div>
-                        )}
-                      </div>
+                      {foundVisitor.photo_url ? (
+                        <img 
+                          src={foundVisitor.photo_url} 
+                          alt={foundVisitor.first_name}
+                          className="w-16 h-16 rounded-full object-cover border-2 border-success"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center">
+                          <User className="w-8 h-8 text-success" />
+                        </div>
+                      )}
                       <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-foreground">
-                          {foundVisitor.first_name} {foundVisitor.last_name}
-                        </h3>
-                        <p className="font-mono text-primary text-lg">{foundVisitor.visitor_code}</p>
-                        <Badge className="status-active mt-2">{foundVisitor.status}</Badge>
+                        <p className="font-bold text-lg text-foreground uppercase">
+                          {foundVisitor.last_name}, {foundVisitor.first_name}
+                        </p>
+                        <p className="text-sm font-mono text-success">
+                          ID: {foundVisitor.visitor_code}
+                        </p>
                       </div>
                       <Button variant="ghost" size="icon" onClick={resetSelection}>
                         <X className="w-5 h-5" />
                       </Button>
                     </div>
-
-                    {/* Time In Section */}
-                    {!getOpenSession(foundVisitor.id) && (
-                      <div className="mt-4 space-y-4">
+                    
+                    {/* PDL Selection */}
+                    {activeTab === 'time-in' && (
+                      <div className="mt-4 space-y-3">
                         <div className="space-y-2">
-                          <Label>Select PDL to Visit</Label>
+                          <Label>SELECT PDL TO VISIT</Label>
                           <Select 
                             value={selectedLink?.id || ''} 
-                            onValueChange={(val) => {
-                              const link = getVisitorLinks(foundVisitor.id).find(l => l.id === val);
-                              setSelectedLink(link || null);
-                            }}
+                            onValueChange={(v) => setSelectedLink(links.find(l => l.id === v) || null)}
                           >
                             <SelectTrigger className="input-field">
                               <SelectValue placeholder="Select PDL" />
@@ -586,53 +626,50 @@ export default function VisitationPage() {
                                 const pdl = pdls.find(p => p.id === link.pdl_id);
                                 return (
                                   <SelectItem key={link.id} value={link.id}>
-                                    {pdl?.last_name}, {pdl?.first_name} - {RELATIONSHIP_LABELS[link.relationship]}
-                                    {isConjugalEligible(link.relationship) && ' ★'}
+                                    {pdl?.last_name}, {pdl?.first_name} ({RELATIONSHIP_LABELS[link.relationship]})
                                   </SelectItem>
                                 );
                               })}
                             </SelectContent>
                           </Select>
                         </div>
-
-                        {selectedLink && isConjugalEligible(selectedLink.relationship) && (
+                        
+                        {selectedLink && (
                           <div className="space-y-2">
-                            <Label>Visit Type</Label>
-                            <Select value={visitType} onValueChange={(val: VisitType) => setVisitType(val)}>
+                            <Label>VISIT TYPE</Label>
+                            <Select value={visitType} onValueChange={(v) => setVisitType(v as VisitType)}>
                               <SelectTrigger className="input-field">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="regular">Regular Visit</SelectItem>
-                                <SelectItem value="conjugal">Conjugal Visit</SelectItem>
+                                <SelectItem value="regular">REGULAR VISIT</SelectItem>
+                                {isConjugalEligible(selectedLink.relationship) && (
+                                  <SelectItem value="conjugal">CONJUGAL VISIT</SelectItem>
+                                )}
                               </SelectContent>
                             </Select>
                           </div>
                         )}
-
+                        
                         <Button 
                           onClick={handleTimeIn}
-                          disabled={!selectedLink}
                           className="w-full btn-scanner h-12"
+                          disabled={!selectedLink}
                         >
                           <LogIn className="w-5 h-5 mr-2" />
-                          Record Time In
+                          RECORD TIME IN
                         </Button>
                       </div>
                     )}
-
-                    {/* Time Out Section */}
-                    {getOpenSession(foundVisitor.id) && (
+                    
+                    {activeTab === 'time-out' && (
                       <div className="mt-4">
-                        <p className="text-sm text-muted-foreground mb-3">
-                          Active session since: {new Date(getOpenSession(foundVisitor.id)!.time_in).toLocaleTimeString()}
-                        </p>
                         <Button 
                           onClick={() => handleTimeOut()}
-                          className="w-full bg-destructive hover:bg-destructive/90 h-12"
+                          className="w-full bg-info hover:bg-info/90 h-12"
                         >
                           <LogOut className="w-5 h-5 mr-2" />
-                          Record Time Out
+                          RECORD TIME OUT
                         </Button>
                       </div>
                     )}
@@ -643,102 +680,99 @@ export default function VisitationPage() {
           </Card>
         </div>
 
-        {/* Active Sessions Sidebar */}
+        {/* Active Sessions Panel */}
         <div className="space-y-6">
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Clock className="w-5 h-5 text-primary" />
-                Active Sessions
+                ACTIVE SESSIONS
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3 max-h-[400px] overflow-y-auto">
               {activeSessions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p>No active sessions</p>
-                </div>
+                <p className="text-center text-muted-foreground py-8">
+                  No active sessions
+                </p>
               ) : (
-                <div className="space-y-3 max-h-[400px] overflow-y-auto scrollbar-thin">
-                  {activeSessions.map(session => {
-                    const visitor = visitors.find(v => v.id === session.visitor_id);
-                    const pdl = pdls.find(p => p.id === session.pdl_id);
-                    return (
-                      <div key={session.id} className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <span className="text-xs font-semibold text-primary">
-                              {visitor?.first_name?.charAt(0)}{visitor?.last_name?.charAt(0)}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-foreground text-sm truncate">
-                              {visitor?.first_name} {visitor?.last_name}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              → {pdl?.first_name} {pdl?.last_name}
-                            </p>
-                          </div>
-                          <Badge className={session.visit_type === 'conjugal' ? 'status-approved' : 'status-active'} variant="outline">
-                            {session.visit_type}
-                          </Badge>
+                activeSessions.map(session => {
+                  const visitor = visitors.find(v => v.id === session.visitor_id);
+                  const pdl = pdls.find(p => p.id === session.pdl_id);
+                  const duration = Math.round(
+                    (Date.now() - new Date(session.time_in).getTime()) / 60000
+                  );
+                  return (
+                    <div 
+                      key={session.id} 
+                      className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-foreground text-sm uppercase">
+                            {visitor?.last_name}, {visitor?.first_name}
+                          </p>
+                          <p className="text-xs text-muted-foreground uppercase">
+                            → {pdl?.last_name}, {pdl?.first_name}
+                          </p>
                         </div>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
-                          <span className="text-xs text-muted-foreground">
-                            In: {new Date(session.time_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleTimeOut(session.id)}
-                            className="h-7 text-xs"
-                          >
-                            <LogOut className="w-3 h-3 mr-1" />
-                            Time Out
-                          </Button>
-                        </div>
+                        <Badge className={session.visit_type === 'conjugal' ? 'status-approved' : 'status-active'}>
+                          {session.visit_type === 'conjugal' ? 'C' : 'R'}
+                        </Badge>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(session.time_in).toLocaleTimeString()} • {duration}m
+                        </span>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleTimeOut(session.id)}
+                          className="h-7 text-xs"
+                        >
+                          <LogOut className="w-3 h-3 mr-1" />
+                          OUT
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
               )}
             </CardContent>
           </Card>
 
-          {/* Today's Completed */}
+          {/* Completed Today */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Check className="w-5 h-5 text-success" />
-                Completed Today
+                COMPLETED TODAY
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2 max-h-[300px] overflow-y-auto">
               {completedSessions.length === 0 ? (
-                <div className="text-center py-4 text-muted-foreground">
-                  <p className="text-sm">No completed visits today</p>
-                </div>
+                <p className="text-center text-muted-foreground py-4">
+                  No completed visits today
+                </p>
               ) : (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto scrollbar-thin">
-                  {completedSessions.slice(0, 5).map(session => {
-                    const visitor = visitors.find(v => v.id === session.visitor_id);
-                    return (
-                      <div key={session.id} className="flex items-center justify-between p-2 rounded bg-muted/20 text-sm">
-                        <span className="text-foreground truncate">
-                          {visitor?.first_name} {visitor?.last_name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(session.time_out!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {completedSessions.length > 5 && (
-                    <p className="text-xs text-muted-foreground text-center pt-2">
-                      +{completedSessions.length - 5} more
-                    </p>
-                  )}
-                </div>
+                completedSessions.slice(0, 10).map(session => {
+                  const visitor = visitors.find(v => v.id === session.visitor_id);
+                  const duration = session.time_out 
+                    ? Math.round((new Date(session.time_out).getTime() - new Date(session.time_in).getTime()) / 60000)
+                    : 0;
+                  return (
+                    <div 
+                      key={session.id} 
+                      className="p-2 rounded-lg bg-muted/20 flex items-center justify-between"
+                    >
+                      <span className="text-sm text-foreground truncate uppercase">
+                        {visitor?.last_name}, {visitor?.first_name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {duration}m
+                      </span>
+                    </div>
+                  );
+                })
               )}
             </CardContent>
           </Card>

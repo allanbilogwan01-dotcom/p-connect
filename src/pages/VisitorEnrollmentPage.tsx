@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { 
   UserPlus, Search, Camera, QrCode, Check, 
-  MoreHorizontal, Edit, Eye, RefreshCw, CreditCard,
-  Download, Scan, Loader2, Plus
+  Edit, RefreshCw, CreditCard,
+  Download, Scan, Loader2, Plus, Link2, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -16,12 +17,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -31,13 +26,20 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { getVisitors, createVisitor, updateVisitor, createAuditLog, saveBiometric, getBiometricByVisitorId } from '@/lib/localStorage';
+import { 
+  getVisitors, createVisitor, updateVisitor, createAuditLog, 
+  saveBiometric, getBiometricByVisitorId, getPDLs, 
+  createPDLVisitorLink, getPDLVisitorLinks 
+} from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
 import { VisitorIDCard } from '@/components/IDCard';
 import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
-import type { Visitor } from '@/types';
+import { useCameraDevices } from '@/components/CameraSelector';
+import { RELATIONSHIP_LABELS, CATEGORY_LABELS } from '@/types';
+import type { Visitor, RelationshipType, VisitorCategory } from '@/types';
 
 export default function VisitorEnrollmentPage() {
   const [visitors, setVisitors] = useState<Visitor[]>(getVisitors());
@@ -49,9 +51,20 @@ export default function VisitorEnrollmentPage() {
   const [showCamera, setShowCamera] = useState(false);
   const [showQR, setShowQR] = useState<Visitor | null>(null);
   const [showIDCard, setShowIDCard] = useState<Visitor | null>(null);
+  
+  // Enhanced enrollment states
+  const [enrollmentStep, setEnrollmentStep] = useState<'info' | 'biometric' | 'link'>('info');
   const [enrollingBiometrics, setEnrollingBiometrics] = useState(false);
   const [biometricProgress, setBiometricProgress] = useState(0);
   const [capturedEmbeddings, setCapturedEmbeddings] = useState<number[][]>([]);
+  const [newVisitorId, setNewVisitorId] = useState<string | null>(null);
+  const [skipBiometrics, setSkipBiometrics] = useState(false);
+  
+  // PDL Link states
+  const [linkPDL, setLinkPDL] = useState('');
+  const [linkRelationship, setLinkRelationship] = useState<RelationshipType | ''>('');
+  const [linkCategory, setLinkCategory] = useState<VisitorCategory | ''>('');
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const idCardRef = useRef<HTMLDivElement>(null);
@@ -59,6 +72,8 @@ export default function VisitorEnrollmentPage() {
   const { toast } = useToast();
 
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
+  const { devices, selectedDevice, setSelectedDevice } = useCameraDevices();
+  const pdls = getPDLs();
 
   useEffect(() => {
     loadModels();
@@ -85,14 +100,23 @@ export default function VisitorEnrollmentPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const startCamera = async () => {
+  const startCamera = useCallback(async (deviceId?: string) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: 640, height: 480 } 
-      });
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      
+      const constraints: MediaStreamConstraints = {
+        video: deviceId 
+          ? { deviceId: { exact: deviceId }, width: 640, height: 480 }
+          : { facingMode: 'user', width: 640, height: 480 }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
       setShowCamera(true);
     } catch (error) {
@@ -102,16 +126,22 @@ export default function VisitorEnrollmentPage() {
         variant: 'destructive',
       });
     }
-  };
+  }, [toast]);
 
-  const stopCamera = () => {
+  useEffect(() => {
+    if (showCamera && selectedDevice) {
+      startCamera(selectedDevice);
+    }
+  }, [selectedDevice, showCamera, startCamera]);
+
+  const stopCamera = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     setShowCamera(false);
     setEnrollingBiometrics(false);
-  };
+  }, []);
 
   const capturePhoto = () => {
     if (videoRef.current) {
@@ -125,16 +155,20 @@ export default function VisitorEnrollmentPage() {
     }
   };
 
-  const startBiometricEnrollment = async (visitorId: string) => {
+  const startBiometricEnrollment = useCallback(async (visitorId: string) => {
     if (!isLoaded) {
       toast({ title: 'Loading', description: 'Face detection is loading...' });
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user', width: 640, height: 480 } 
-      });
+      const constraints: MediaStreamConstraints = {
+        video: selectedDevice 
+          ? { deviceId: { exact: selectedDevice }, width: 640, height: 480 }
+          : { facingMode: 'user', width: 640, height: 480 }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -144,7 +178,6 @@ export default function VisitorEnrollmentPage() {
       setCapturedEmbeddings([]);
       setBiometricProgress(0);
       
-      // Run enrollment loop
       runEnrollmentCapture(visitorId);
     } catch (error) {
       toast({
@@ -153,7 +186,7 @@ export default function VisitorEnrollmentPage() {
         variant: 'destructive',
       });
     }
-  };
+  }, [isLoaded, selectedDevice, toast]);
 
   const runEnrollmentCapture = async (visitorId: string) => {
     if (!videoRef.current || !isLoaded) return;
@@ -169,7 +202,6 @@ export default function VisitorEnrollmentPage() {
         setBiometricProgress(progress);
         
         if (newEmbeddings.length >= 5) {
-          // Save biometrics
           saveBiometric(visitorId, newEmbeddings, newEmbeddings.map(() => 0.9));
           stopCamera();
           
@@ -185,15 +217,16 @@ export default function VisitorEnrollmentPage() {
             description: 'Face recognition data has been saved successfully.',
           });
           
+          // Move to link step
+          setEnrollmentStep('link');
+          
           return newEmbeddings;
         }
         
-        // Continue capturing
         setTimeout(() => runEnrollmentCapture(visitorId), 500);
         return newEmbeddings;
       });
     } else {
-      // No face detected, retry
       if (enrollingBiometrics) {
         setTimeout(() => runEnrollmentCapture(visitorId), 200);
       }
@@ -203,9 +236,21 @@ export default function VisitorEnrollmentPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Transform text to uppercase (except for specific fields)
+    const uppercaseFormData = {
+      ...formData,
+      first_name: formData.first_name.toUpperCase(),
+      middle_name: formData.middle_name.toUpperCase(),
+      last_name: formData.last_name.toUpperCase(),
+      suffix: formData.suffix.toUpperCase(),
+      address: formData.address.toUpperCase(),
+      valid_id_type: formData.valid_id_type.toUpperCase(),
+      valid_id_number: formData.valid_id_number.toUpperCase(),
+    };
+    
     if (editingVisitor) {
       const updated = updateVisitor(editingVisitor.id, {
-        ...formData,
+        ...uppercaseFormData,
         photo_url: capturedPhoto || editingVisitor.photo_url,
       });
       if (updated) {
@@ -218,12 +263,14 @@ export default function VisitorEnrollmentPage() {
         });
         toast({ title: 'Visitor Updated', description: `${updated.first_name} ${updated.last_name} has been updated.` });
       }
+      resetForm();
     } else {
       const newVisitor = createVisitor({ 
-        ...formData, 
+        ...uppercaseFormData, 
         status: 'active',
         photo_url: capturedPhoto || undefined,
       });
+      setNewVisitorId(newVisitor.id);
       setVisitors(getVisitors());
       createAuditLog({
         user_id: user?.id || '',
@@ -232,11 +279,65 @@ export default function VisitorEnrollmentPage() {
         target_id: newVisitor.id,
       });
       toast({ 
-        title: 'Visitor Enrolled', 
+        title: 'Visitor Created', 
         description: `${newVisitor.first_name} ${newVisitor.last_name} registered with ID: ${newVisitor.visitor_code}` 
       });
+      
+      // Move to biometric step
+      setEnrollmentStep('biometric');
+    }
+  };
+
+  const handleSkipBiometrics = () => {
+    setSkipBiometrics(true);
+    setEnrollmentStep('link');
+  };
+
+  const handleCreateLink = () => {
+    if (!newVisitorId || !linkPDL || !linkRelationship || !linkCategory) {
+      toast({
+        title: 'Missing Fields',
+        description: 'Please fill in all required fields.',
+        variant: 'destructive',
+      });
+      return;
     }
     
+    // Check existing link
+    const existingLinks = getPDLVisitorLinks();
+    if (existingLinks.some(l => l.pdl_id === linkPDL && l.visitor_id === newVisitorId)) {
+      toast({
+        title: 'Link Exists',
+        description: 'This visitor is already linked to this PDL.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const newLink = createPDLVisitorLink({
+      pdl_id: linkPDL,
+      visitor_id: newVisitorId,
+      relationship: linkRelationship,
+      category: linkCategory,
+      approval_status: 'pending',
+    });
+    
+    createAuditLog({
+      user_id: user?.id || '',
+      action: 'kin_dalaw_created',
+      target_type: 'pdl_visitor_link',
+      target_id: newLink.id,
+    });
+    
+    toast({
+      title: 'Link Created',
+      description: 'PDL link has been created and is pending approval.',
+    });
+    
+    resetForm();
+  };
+
+  const handleSkipLink = () => {
     resetForm();
   };
 
@@ -255,6 +356,14 @@ export default function VisitorEnrollmentPage() {
     });
     setEditingVisitor(null);
     setCapturedPhoto(null);
+    setEnrollmentStep('info');
+    setNewVisitorId(null);
+    setSkipBiometrics(false);
+    setLinkPDL('');
+    setLinkRelationship('');
+    setLinkCategory('');
+    setCapturedEmbeddings([]);
+    setBiometricProgress(0);
     stopCamera();
     setIsDialogOpen(false);
   };
@@ -307,15 +416,23 @@ export default function VisitorEnrollmentPage() {
   const statusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="status-active">Active</Badge>;
+        return <Badge className="status-active">ACTIVE</Badge>;
       case 'blacklisted':
-        return <Badge className="status-rejected">Blacklisted</Badge>;
+        return <Badge className="status-rejected">BLACKLISTED</Badge>;
       case 'inactive':
-        return <Badge className="status-detained">Inactive</Badge>;
+        return <Badge className="status-detained">INACTIVE</Badge>;
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return <Badge variant="outline">{status.toUpperCase()}</Badge>;
     }
   };
+
+  const relationshipOptions: RelationshipType[] = [
+    'spouse', 'wife', 'husband', 'live_in_partner', 'common_law_partner',
+    'parent', 'child', 'sibling', 'grandparent', 'grandchild',
+    'aunt_uncle', 'cousin', 'niece_nephew', 'legal_guardian', 'close_friend', 'other'
+  ];
+
+  const categoryOptions: VisitorCategory[] = ['immediate_family', 'legal_guardian', 'close_friend'];
 
   return (
     <motion.div
@@ -349,8 +466,8 @@ export default function VisitorEnrollmentPage() {
               <Input
                 placeholder="Search by name or visitor code..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 input-field"
+                onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
+                className="pl-10 input-field uppercase"
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -358,10 +475,10 @@ export default function VisitorEnrollmentPage() {
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="blacklisted">Blacklisted</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="all">ALL STATUS</SelectItem>
+                <SelectItem value="active">ACTIVE</SelectItem>
+                <SelectItem value="blacklisted">BLACKLISTED</SelectItem>
+                <SelectItem value="inactive">INACTIVE</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -401,7 +518,7 @@ export default function VisitorEnrollmentPage() {
                     {hasBiometrics(visitor.id) && (
                       <Badge className="bg-success/80 text-success-foreground text-xs">
                         <Scan className="w-3 h-3 mr-1" />
-                        Enrolled
+                        ENROLLED
                       </Badge>
                     )}
                   </div>
@@ -423,7 +540,11 @@ export default function VisitorEnrollmentPage() {
                         <Button 
                           size="sm" 
                           className="bg-primary/80"
-                          onClick={() => startBiometricEnrollment(visitor.id)}
+                          onClick={() => {
+                            setNewVisitorId(visitor.id);
+                            setEnrollmentStep('biometric');
+                            setIsDialogOpen(true);
+                          }}
                           disabled={faceLoading}
                         >
                           <Scan className="w-4 h-4" />
@@ -433,7 +554,7 @@ export default function VisitorEnrollmentPage() {
                   </div>
                 </div>
                 <div className="p-4">
-                  <p className="font-semibold text-foreground truncate">
+                  <p className="font-semibold text-foreground truncate uppercase">
                     {visitor.last_name}, {visitor.first_name}
                   </p>
                   <p className="text-sm font-mono text-primary mt-1">
@@ -449,7 +570,7 @@ export default function VisitorEnrollmentPage() {
         )}
       </div>
 
-      {/* Enrollment Dialog */}
+      {/* Enhanced Enrollment Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => !open && resetForm()}>
         <DialogContent className="sm:max-w-3xl glass-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -459,160 +580,376 @@ export default function VisitorEnrollmentPage() {
             </DialogTitle>
           </DialogHeader>
           
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Photo Capture */}
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-48 h-48 rounded-2xl overflow-hidden bg-muted border-2 border-dashed border-border relative">
-                {showCamera ? (
-                  <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline 
-                    className="w-full h-full object-cover"
+          {/* Step Indicator */}
+          {!editingVisitor && (
+            <div className="flex items-center justify-center gap-2 py-2">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${enrollmentStep === 'info' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">1</span>
+                INFO
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${enrollmentStep === 'biometric' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">2</span>
+                BIOMETRIC
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${enrollmentStep === 'link' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                <span className="w-5 h-5 rounded-full bg-current/20 flex items-center justify-center text-xs">3</span>
+                PDL LINK
+              </div>
+            </div>
+          )}
+          
+          {/* Step 1: Basic Info */}
+          {(enrollmentStep === 'info' || editingVisitor) && (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Photo Capture */}
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-48 h-48 rounded-2xl overflow-hidden bg-muted border-2 border-dashed border-border relative">
+                  {showCamera ? (
+                    <video 
+                      ref={videoRef} 
+                      autoPlay 
+                      playsInline 
+                      muted
+                      className="w-full h-full object-cover"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  ) : capturedPhoto ? (
+                    <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Camera className="w-12 h-12 text-muted-foreground/50" />
+                    </div>
+                  )}
+                </div>
+                
+                {/* Camera Selector */}
+                {devices.length > 1 && showCamera && (
+                  <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                    <SelectTrigger className="w-48 h-8 text-xs">
+                      <Camera className="w-3 h-3 mr-1" />
+                      <SelectValue placeholder="Select camera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map((device, idx) => (
+                        <SelectItem key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Camera ${idx + 1}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                
+                <div className="flex gap-2">
+                  {showCamera ? (
+                    <>
+                      <Button type="button" onClick={capturePhoto} className="btn-scanner">
+                        <Check className="w-4 h-4 mr-2" />
+                        Capture
+                      </Button>
+                      <Button type="button" variant="outline" onClick={stopCamera}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button type="button" variant="secondary" onClick={() => startCamera()}>
+                        <Camera className="w-4 h-4 mr-2" />
+                        {capturedPhoto ? 'Retake' : 'Take Photo'}
+                      </Button>
+                      {capturedPhoto && (
+                        <Button type="button" variant="outline" onClick={() => setCapturedPhoto(null)}>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Remove
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>First Name *</Label>
+                  <Input
+                    value={formData.first_name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                    required
                   />
-                ) : capturedPhoto ? (
-                  <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Camera className="w-12 h-12 text-muted-foreground/50" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Middle Name</Label>
+                  <Input
+                    value={formData.middle_name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, middle_name: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Last Name *</Label>
+                  <Input
+                    value={formData.last_name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Suffix</Label>
+                  <Input
+                    value={formData.suffix}
+                    onChange={(e) => setFormData(prev => ({ ...prev, suffix: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                    placeholder="JR., SR., III, etc."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Date of Birth *</Label>
+                  <Input
+                    type="date"
+                    value={formData.date_of_birth}
+                    onChange={(e) => setFormData(prev => ({ ...prev, date_of_birth: e.target.value }))}
+                    className="input-field"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Gender *</Label>
+                  <Select value={formData.gender} onValueChange={(val: 'male' | 'female') => setFormData(prev => ({ ...prev, gender: val }))}>
+                    <SelectTrigger className="input-field">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">MALE</SelectItem>
+                      <SelectItem value="female">FEMALE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Contact Number *</Label>
+                  <Input
+                    value={formData.contact_number}
+                    onChange={(e) => setFormData(prev => ({ ...prev, contact_number: e.target.value }))}
+                    className="input-field"
+                    placeholder="+63 XXX XXX XXXX"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Valid ID Type</Label>
+                  <Input
+                    value={formData.valid_id_type}
+                    onChange={(e) => setFormData(prev => ({ ...prev, valid_id_type: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                    placeholder="e.g., DRIVER'S LICENSE"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Address *</Label>
+                  <Input
+                    value={formData.address}
+                    onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                    placeholder="Complete address"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Valid ID Number</Label>
+                  <Input
+                    value={formData.valid_id_number}
+                    onChange={(e) => setFormData(prev => ({ ...prev, valid_id_number: e.target.value.toUpperCase() }))}
+                    className="input-field uppercase"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="btn-scanner">
+                  {editingVisitor ? 'Update Visitor' : 'Continue to Biometrics'}
+                  {!editingVisitor && <ChevronRight className="w-4 h-4 ml-2" />}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+          
+          {/* Step 2: Biometric Enrollment */}
+          {enrollmentStep === 'biometric' && !editingVisitor && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold">Facial Biometric Enrollment</h3>
+                <p className="text-sm text-muted-foreground">
+                  Capture face data for visitor identification
+                </p>
+              </div>
+              
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative w-80 h-80 rounded-2xl overflow-hidden bg-muted border-2 border-primary/30">
+                  {faceLoading && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10">
+                      <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
+                      <p className="text-sm text-muted-foreground">Loading face detection...</p>
+                    </div>
+                  )}
+                  
+                  {enrollingBiometrics ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                        style={{ transform: 'scaleX(-1)' }}
+                      />
+                      <div className="absolute inset-8 border-2 border-primary/50 rounded-xl pointer-events-none">
+                        <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl-xl" />
+                        <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr-xl" />
+                        <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl-xl" />
+                        <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br-xl" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <Scan className="w-16 h-16 text-muted-foreground/50 mb-4" />
+                      <p className="text-sm text-muted-foreground">Ready for biometric capture</p>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Camera Selector for Biometrics */}
+                {devices.length > 1 && (
+                  <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                    <SelectTrigger className="w-64 h-9 text-sm">
+                      <Camera className="w-4 h-4 mr-2" />
+                      <SelectValue placeholder="Select camera" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {devices.map((device, idx) => (
+                        <SelectItem key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Camera ${idx + 1}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                
+                {enrollingBiometrics && (
+                  <div className="w-80 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Capturing face data...</span>
+                      <span className="text-primary font-mono">{Math.round(biometricProgress)}%</span>
+                    </div>
+                    <Progress value={biometricProgress} className="h-2" />
                   </div>
                 )}
               </div>
-              <div className="flex gap-2">
-                {showCamera ? (
+              
+              <div className="flex justify-center gap-3">
+                {!enrollingBiometrics ? (
                   <>
-                    <Button type="button" onClick={capturePhoto} className="btn-scanner">
-                      <Check className="w-4 h-4 mr-2" />
-                      Capture
+                    <Button 
+                      onClick={() => newVisitorId && startBiometricEnrollment(newVisitorId)}
+                      className="btn-scanner"
+                      disabled={faceLoading || !newVisitorId}
+                    >
+                      <Scan className="w-4 h-4 mr-2" />
+                      Start Enrollment
                     </Button>
-                    <Button type="button" variant="outline" onClick={stopCamera}>
-                      Cancel
+                    <Button variant="outline" onClick={handleSkipBiometrics}>
+                      Skip for Now
                     </Button>
                   </>
                 ) : (
-                  <>
-                    <Button type="button" variant="secondary" onClick={startCamera}>
-                      <Camera className="w-4 h-4 mr-2" />
-                      {capturedPhoto ? 'Retake' : 'Take Photo'}
-                    </Button>
-                    {capturedPhoto && (
-                      <Button type="button" variant="outline" onClick={() => setCapturedPhoto(null)}>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Remove
-                      </Button>
-                    )}
-                  </>
+                  <Button variant="outline" onClick={stopCamera}>
+                    Cancel
+                  </Button>
                 )}
               </div>
             </div>
-
-            {/* Form Fields */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>First Name *</Label>
-                <Input
-                  value={formData.first_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value }))}
-                  className="input-field"
-                  required
-                />
+          )}
+          
+          {/* Step 3: PDL Link */}
+          {enrollmentStep === 'link' && !editingVisitor && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold">Link to PDL (Optional)</h3>
+                <p className="text-sm text-muted-foreground">
+                  Create a Kin Dalaw link for this visitor
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label>Middle Name</Label>
-                <Input
-                  value={formData.middle_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, middle_name: e.target.value }))}
-                  className="input-field"
-                />
+              
+              <div className="space-y-4 max-w-md mx-auto">
+                <div className="space-y-2">
+                  <Label>Select PDL *</Label>
+                  <Select value={linkPDL} onValueChange={setLinkPDL}>
+                    <SelectTrigger className="input-field">
+                      <SelectValue placeholder="Select a PDL" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {pdls.filter(p => p.status === 'detained').map(pdl => (
+                        <SelectItem key={pdl.id} value={pdl.id}>
+                          {pdl.last_name}, {pdl.first_name} ({pdl.pdl_code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Relationship *</Label>
+                  <Select value={linkRelationship} onValueChange={(v) => setLinkRelationship(v as RelationshipType)}>
+                    <SelectTrigger className="input-field">
+                      <SelectValue placeholder="Select relationship" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {relationshipOptions.map(rel => (
+                        <SelectItem key={rel} value={rel}>
+                          {RELATIONSHIP_LABELS[rel]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Category *</Label>
+                  <Select value={linkCategory} onValueChange={(v) => setLinkCategory(v as VisitorCategory)}>
+                    <SelectTrigger className="input-field">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoryOptions.map(cat => (
+                        <SelectItem key={cat} value={cat}>
+                          {CATEGORY_LABELS[cat]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Last Name *</Label>
-                <Input
-                  value={formData.last_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value }))}
-                  className="input-field"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Suffix</Label>
-                <Input
-                  value={formData.suffix}
-                  onChange={(e) => setFormData(prev => ({ ...prev, suffix: e.target.value }))}
-                  className="input-field"
-                  placeholder="Jr., Sr., III, etc."
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Date of Birth *</Label>
-                <Input
-                  type="date"
-                  value={formData.date_of_birth}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date_of_birth: e.target.value }))}
-                  className="input-field"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Gender *</Label>
-                <Select value={formData.gender} onValueChange={(val: 'male' | 'female') => setFormData(prev => ({ ...prev, gender: val }))}>
-                  <SelectTrigger className="input-field">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Contact Number *</Label>
-                <Input
-                  value={formData.contact_number}
-                  onChange={(e) => setFormData(prev => ({ ...prev, contact_number: e.target.value }))}
-                  className="input-field"
-                  placeholder="+63 XXX XXX XXXX"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Valid ID Type</Label>
-                <Input
-                  value={formData.valid_id_type}
-                  onChange={(e) => setFormData(prev => ({ ...prev, valid_id_type: e.target.value }))}
-                  className="input-field"
-                  placeholder="e.g., Driver's License"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Address *</Label>
-                <Input
-                  value={formData.address}
-                  onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-                  className="input-field"
-                  placeholder="Complete address"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Valid ID Number</Label>
-                <Input
-                  value={formData.valid_id_number}
-                  onChange={(e) => setFormData(prev => ({ ...prev, valid_id_number: e.target.value }))}
-                  className="input-field"
-                />
+              
+              <div className="flex justify-center gap-3">
+                <Button 
+                  onClick={handleCreateLink}
+                  className="btn-scanner"
+                  disabled={!linkPDL || !linkRelationship || !linkCategory}
+                >
+                  <Link2 className="w-4 h-4 mr-2" />
+                  Create Link
+                </Button>
+                <Button variant="outline" onClick={handleSkipLink}>
+                  Skip & Finish
+                </Button>
               </div>
             </div>
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={resetForm}>
-                Cancel
-              </Button>
-              <Button type="submit" className="btn-scanner">
-                {editingVisitor ? 'Update Visitor' : 'Enroll Visitor'}
-              </Button>
-            </DialogFooter>
-          </form>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -620,7 +957,7 @@ export default function VisitorEnrollmentPage() {
       <Dialog open={!!showQR} onOpenChange={() => setShowQR(null)}>
         <DialogContent className="sm:max-w-sm glass-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-xl text-center">Visitor QR Code</DialogTitle>
+            <DialogTitle className="text-xl text-center">VISITOR QR CODE</DialogTitle>
           </DialogHeader>
           {showQR && (
             <div className="flex flex-col items-center gap-4 py-4">
@@ -632,7 +969,7 @@ export default function VisitorEnrollmentPage() {
                 />
               </div>
               <div className="text-center">
-                <p className="font-semibold text-foreground">
+                <p className="font-semibold text-foreground uppercase">
                   {showQR.first_name} {showQR.last_name}
                 </p>
                 <p className="font-mono text-primary text-lg">{showQR.visitor_code}</p>
@@ -646,7 +983,7 @@ export default function VisitorEnrollmentPage() {
       <Dialog open={!!showIDCard} onOpenChange={() => setShowIDCard(null)}>
         <DialogContent className="sm:max-w-md glass-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-xl">Visitor ID Card</DialogTitle>
+            <DialogTitle className="text-xl">VISITOR ID CARD</DialogTitle>
           </DialogHeader>
           {showIDCard && (
             <div className="space-y-4">
@@ -658,7 +995,12 @@ export default function VisitorEnrollmentPage() {
               <div className="flex gap-2">
                 {!hasBiometrics(showIDCard.id) && (
                   <Button 
-                    onClick={() => { setShowIDCard(null); startBiometricEnrollment(showIDCard.id); }}
+                    onClick={() => { 
+                      setShowIDCard(null); 
+                      setNewVisitorId(showIDCard.id);
+                      setEnrollmentStep('biometric');
+                      setIsDialogOpen(true);
+                    }}
                     variant="secondary"
                     className="flex-1"
                     disabled={faceLoading}
@@ -674,53 +1016,6 @@ export default function VisitorEnrollmentPage() {
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Biometric Enrollment Modal */}
-      <Dialog open={enrollingBiometrics} onOpenChange={() => stopCamera()}>
-        <DialogContent className="sm:max-w-md glass-card border-border">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <Scan className="w-6 h-6 text-primary" />
-              Biometric Enrollment
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-muted">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
-              />
-              {/* Scan overlay */}
-              <div className="absolute inset-8 border-2 border-primary/50 rounded-xl pointer-events-none">
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl-xl" />
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr-xl" />
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl-xl" />
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br-xl" />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Capturing face data...</span>
-                <span className="text-primary font-mono">{Math.round(biometricProgress)}%</span>
-              </div>
-              <Progress value={biometricProgress} className="h-2" />
-            </div>
-            
-            <p className="text-center text-sm text-muted-foreground">
-              Keep your face centered in the frame. Moving slightly helps capture better data.
-            </p>
-            
-            <Button variant="outline" onClick={stopCamera} className="w-full">
-              Cancel
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </motion.div>
