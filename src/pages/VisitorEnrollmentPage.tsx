@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   UserPlus, Search, Camera, QrCode, Check, 
-  MoreHorizontal, Edit, Eye, RefreshCw
+  MoreHorizontal, Edit, Eye, RefreshCw, CreditCard,
+  Download, Scan, Loader2, Plus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,10 +30,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { getVisitors, createVisitor, updateVisitor, createAuditLog } from '@/lib/localStorage';
+import { getVisitors, createVisitor, updateVisitor, createAuditLog, saveBiometric, getBiometricByVisitorId } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
+import { VisitorIDCard } from '@/components/IDCard';
+import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
 import type { Visitor } from '@/types';
 
 export default function VisitorEnrollmentPage() {
@@ -43,11 +47,22 @@ export default function VisitorEnrollmentPage() {
   const [editingVisitor, setEditingVisitor] = useState<Visitor | null>(null);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
-  const [showQR, setShowQR] = useState<string | null>(null);
+  const [showQR, setShowQR] = useState<Visitor | null>(null);
+  const [showIDCard, setShowIDCard] = useState<Visitor | null>(null);
+  const [enrollingBiometrics, setEnrollingBiometrics] = useState(false);
+  const [biometricProgress, setBiometricProgress] = useState(0);
+  const [capturedEmbeddings, setCapturedEmbeddings] = useState<number[][]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const idCardRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -95,6 +110,7 @@ export default function VisitorEnrollmentPage() {
       streamRef.current = null;
     }
     setShowCamera(false);
+    setEnrollingBiometrics(false);
   };
 
   const capturePhoto = () => {
@@ -106,6 +122,81 @@ export default function VisitorEnrollmentPage() {
       const photoUrl = canvas.toDataURL('image/jpeg');
       setCapturedPhoto(photoUrl);
       stopCamera();
+    }
+  };
+
+  const startBiometricEnrollment = async (visitorId: string) => {
+    if (!isLoaded) {
+      toast({ title: 'Loading', description: 'Face detection is loading...' });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user', width: 640, height: 480 } 
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setEnrollingBiometrics(true);
+      setCapturedEmbeddings([]);
+      setBiometricProgress(0);
+      
+      // Run enrollment loop
+      runEnrollmentCapture(visitorId);
+    } catch (error) {
+      toast({
+        title: 'Camera Error',
+        description: 'Unable to access camera for biometric enrollment.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const runEnrollmentCapture = async (visitorId: string) => {
+    if (!videoRef.current || !isLoaded) return;
+
+    const detection = await detectFace(videoRef.current);
+    
+    if (detection) {
+      const embedding = descriptorToArray(detection.descriptor);
+      
+      setCapturedEmbeddings(prev => {
+        const newEmbeddings = [...prev, embedding];
+        const progress = (newEmbeddings.length / 5) * 100;
+        setBiometricProgress(progress);
+        
+        if (newEmbeddings.length >= 5) {
+          // Save biometrics
+          saveBiometric(visitorId, newEmbeddings, newEmbeddings.map(() => 0.9));
+          stopCamera();
+          
+          createAuditLog({
+            user_id: user?.id || '',
+            action: 'visitor_enrolled',
+            target_type: 'visitor',
+            target_id: visitorId,
+          });
+          
+          toast({
+            title: 'Biometrics Enrolled',
+            description: 'Face recognition data has been saved successfully.',
+          });
+          
+          return newEmbeddings;
+        }
+        
+        // Continue capturing
+        setTimeout(() => runEnrollmentCapture(visitorId), 500);
+        return newEmbeddings;
+      });
+    } else {
+      // No face detected, retry
+      if (enrollingBiometrics) {
+        setTimeout(() => runEnrollmentCapture(visitorId), 200);
+      }
     }
   };
 
@@ -186,6 +277,33 @@ export default function VisitorEnrollmentPage() {
     setIsDialogOpen(true);
   };
 
+  const handlePrintID = () => {
+    if (!idCardRef.current) return;
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Visitor ID Card</title>
+            <style>
+              body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f0f0; }
+              .card { transform: scale(1.5); }
+            </style>
+          </head>
+          <body>
+            <div class="card">${idCardRef.current.outerHTML}</div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }
+  };
+
+  const hasBiometrics = (visitorId: string) => {
+    return !!getBiometricByVisitorId(visitorId);
+  };
+
   const statusBadge = (status: string) => {
     switch (status) {
       case 'active':
@@ -213,7 +331,7 @@ export default function VisitorEnrollmentPage() {
             Visitor Enrollment
           </h1>
           <p className="text-muted-foreground mt-1">
-            Register and manage visitor records
+            Register and manage visitor records with biometric enrollment
           </p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="btn-scanner">
@@ -279,6 +397,14 @@ export default function VisitorEnrollmentPage() {
                       </span>
                     </div>
                   )}
+                  <div className="absolute top-2 left-2">
+                    {hasBiometrics(visitor.id) && (
+                      <Badge className="bg-success/80 text-success-foreground text-xs">
+                        <Scan className="w-3 h-3 mr-1" />
+                        Enrolled
+                      </Badge>
+                    )}
+                  </div>
                   <div className="absolute top-2 right-2">
                     {statusBadge(visitor.status)}
                   </div>
@@ -287,9 +413,22 @@ export default function VisitorEnrollmentPage() {
                       <Button size="sm" variant="secondary" onClick={() => handleEdit(visitor)}>
                         <Edit className="w-4 h-4" />
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={() => setShowQR(visitor.visitor_code)}>
+                      <Button size="sm" variant="secondary" onClick={() => setShowQR(visitor)}>
                         <QrCode className="w-4 h-4" />
                       </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setShowIDCard(visitor)}>
+                        <CreditCard className="w-4 h-4" />
+                      </Button>
+                      {!hasBiometrics(visitor.id) && (
+                        <Button 
+                          size="sm" 
+                          className="bg-primary/80"
+                          onClick={() => startBiometricEnrollment(visitor.id)}
+                          disabled={faceLoading}
+                        >
+                          <Scan className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -461,7 +600,6 @@ export default function VisitorEnrollmentPage() {
                   value={formData.valid_id_number}
                   onChange={(e) => setFormData(prev => ({ ...prev, valid_id_number: e.target.value }))}
                   className="input-field"
-                  placeholder="ID Number"
                 />
               </div>
             </div>
@@ -482,39 +620,109 @@ export default function VisitorEnrollmentPage() {
       <Dialog open={!!showQR} onOpenChange={() => setShowQR(null)}>
         <DialogContent className="sm:max-w-sm glass-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-center">Visitor QR Code</DialogTitle>
+            <DialogTitle className="text-xl text-center">Visitor QR Code</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
-            <div className="p-4 bg-white rounded-xl">
-              <QRCodeSVG value={showQR || ''} size={200} />
+          {showQR && (
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="p-4 bg-white rounded-xl">
+                <QRCodeSVG 
+                  value={showQR.visitor_code} 
+                  size={200}
+                  level="H"
+                />
+              </div>
+              <div className="text-center">
+                <p className="font-semibold text-foreground">
+                  {showQR.first_name} {showQR.last_name}
+                </p>
+                <p className="font-mono text-primary text-lg">{showQR.visitor_code}</p>
+              </div>
             </div>
-            <p className="font-mono text-xl text-primary font-bold">{showQR}</p>
-            <p className="text-sm text-muted-foreground text-center">
-              Scan this QR code for quick identification during visitation
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ID Card Dialog */}
+      <Dialog open={!!showIDCard} onOpenChange={() => setShowIDCard(null)}>
+        <DialogContent className="sm:max-w-md glass-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Visitor ID Card</DialogTitle>
+          </DialogHeader>
+          {showIDCard && (
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <div ref={idCardRef}>
+                  <VisitorIDCard visitor={showIDCard} />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {!hasBiometrics(showIDCard.id) && (
+                  <Button 
+                    onClick={() => { setShowIDCard(null); startBiometricEnrollment(showIDCard.id); }}
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={faceLoading}
+                  >
+                    <Scan className="w-4 h-4 mr-2" />
+                    Enroll Face
+                  </Button>
+                )}
+                <Button onClick={handlePrintID} className="flex-1 btn-scanner">
+                  <Download className="w-4 h-4 mr-2" />
+                  Print ID
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Biometric Enrollment Modal */}
+      <Dialog open={enrollingBiometrics} onOpenChange={() => stopCamera()}>
+        <DialogContent className="sm:max-w-md glass-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Scan className="w-6 h-6 text-primary" />
+              Biometric Enrollment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative w-full aspect-square rounded-2xl overflow-hidden bg-muted">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)' }}
+              />
+              {/* Scan overlay */}
+              <div className="absolute inset-8 border-2 border-primary/50 rounded-xl pointer-events-none">
+                <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl-xl" />
+                <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr-xl" />
+                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl-xl" />
+                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br-xl" />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Capturing face data...</span>
+                <span className="text-primary font-mono">{Math.round(biometricProgress)}%</span>
+              </div>
+              <Progress value={biometricProgress} className="h-2" />
+            </div>
+            
+            <p className="text-center text-sm text-muted-foreground">
+              Keep your face centered in the frame. Moving slightly helps capture better data.
             </p>
+            
+            <Button variant="outline" onClick={stopCamera} className="w-full">
+              Cancel
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
     </motion.div>
-  );
-}
-
-function Plus(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
   );
 }

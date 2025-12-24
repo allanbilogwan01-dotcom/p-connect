@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, Camera, QrCode, Search, LogIn, LogOut,
-  User, AlertCircle, Check, X
+  User, AlertCircle, Check, X, Scan, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Select,
@@ -29,29 +28,41 @@ import {
   getVisitorByCode, getVisitors, getPDLs, getPDLVisitorLinks,
   getOpenSession, createVisitSession, updateVisitSession,
   getActiveSessions, getCompletedTodaySessions, createAuditLog,
-  getSettings
+  getSettings, getBiometrics, getVisitorById
 } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
-import { CONJUGAL_RELATIONSHIPS, RELATIONSHIP_LABELS } from '@/types';
+import { RELATIONSHIP_LABELS } from '@/types';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
+import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
 
 export default function VisitationPage() {
   const [activeTab, setActiveTab] = useState('time-in');
+  const [idMethod, setIdMethod] = useState<'manual' | 'qr' | 'face'>('manual');
   const [scannerActive, setScannerActive] = useState(false);
+  const [faceScanning, setFaceScanning] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [foundVisitor, setFoundVisitor] = useState<Visitor | null>(null);
   const [selectedLink, setSelectedLink] = useState<PDLVisitorLink | null>(null);
   const [visitType, setVisitType] = useState<VisitType>('regular');
   const [activeSessions, setActiveSessions] = useState(getActiveSessions());
   const [completedSessions, setCompletedSessions] = useState(getCompletedTodaySessions());
+  const [faceMessage, setFaceMessage] = useState('Position face in frame');
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   const pdls = getPDLs();
   const visitors = getVisitors();
   const links = getPDLVisitorLinks();
   const settings = getSettings();
+
+  const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
+
+  useEffect(() => {
+    loadModels();
+  }, [loadModels]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -93,6 +104,125 @@ export default function VisitationPage() {
     setScannerActive(false);
   };
 
+  const startFaceScanner = async () => {
+    if (!isLoaded) {
+      toast({
+        title: 'Loading',
+        description: 'Face detection models are still loading...',
+      });
+      return;
+    }
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 640, height: 480 }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setFaceScanning(true);
+      setFaceMessage('Scanning face...');
+      runFaceDetection();
+    } catch (err) {
+      toast({
+        title: 'Camera Error',
+        description: 'Unable to access camera for face scanning.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const stopFaceScanner = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setFaceScanning(false);
+  }, []);
+
+  const runFaceDetection = useCallback(async () => {
+    if (!videoRef.current || !isLoaded || !faceScanning) return;
+
+    const detection = await detectFace(videoRef.current);
+    
+    if (detection) {
+      const biometrics = getBiometrics();
+      let bestMatch: { visitorId: string; score: number } | null = null;
+      let secondBest = 0;
+      
+      for (const bio of biometrics) {
+        for (const storedEmb of bio.embeddings) {
+          const storedDescriptor = arrayToDescriptor(storedEmb);
+          const distance = Math.sqrt(
+            detection.descriptor.reduce((sum, val, i) => 
+              sum + Math.pow(val - storedDescriptor[i], 2), 0
+            )
+          );
+          const score = getMatchScore(distance);
+          
+          if (!bestMatch || score > bestMatch.score) {
+            secondBest = bestMatch?.score || 0;
+            bestMatch = { visitorId: bio.visitor_id, score };
+          } else if (score > secondBest) {
+            secondBest = score;
+          }
+        }
+      }
+      
+      if (bestMatch && 
+          bestMatch.score >= settings.face_recognition_threshold &&
+          (bestMatch.score - secondBest) >= settings.face_recognition_margin) {
+        const visitor = getVisitorById(bestMatch.visitorId);
+        if (visitor && visitor.status === 'active') {
+          stopFaceScanner();
+          setFoundVisitor(visitor);
+          
+          const openSession = getOpenSession(visitor.id);
+          if (openSession) {
+            setActiveTab('time-out');
+            setSelectedLink(links.find(l => l.id === openSession.pdl_visitor_link_id) || null);
+          } else {
+            const approvedLinks = links.filter(l => 
+              l.visitor_id === visitor.id && l.approval_status === 'approved'
+            );
+            if (approvedLinks.length === 1) {
+              setSelectedLink(approvedLinks[0]);
+            }
+          }
+          
+          toast({
+            title: 'Face Matched!',
+            description: `${visitor.first_name} ${visitor.last_name} (${Math.round(bestMatch.score * 100)}% confidence)`,
+          });
+          return;
+        }
+      }
+      
+      setFaceMessage('Face detected, searching...');
+    } else {
+      setFaceMessage('Position face in frame');
+    }
+
+    if (faceScanning) {
+      setTimeout(runFaceDetection, 200);
+    }
+  }, [isLoaded, faceScanning, detectFace, getMatchScore, settings, stopFaceScanner, links, toast]);
+
+  useEffect(() => {
+    if (faceScanning && isLoaded) {
+      runFaceDetection();
+    }
+  }, [faceScanning, isLoaded, runFaceDetection]);
+
+  useEffect(() => {
+    return () => {
+      stopFaceScanner();
+      stopQRScanner();
+    };
+  }, [stopFaceScanner]);
+
   const handleCodeScanned = (code: string, method: TimeMethod) => {
     const visitor = getVisitorByCode(code);
     if (!visitor) {
@@ -115,16 +245,12 @@ export default function VisitationPage() {
 
     setFoundVisitor(visitor);
     
-    // Check for open session
     const openSession = getOpenSession(visitor.id);
     if (openSession) {
-      // Time out mode
       setActiveTab('time-out');
       setSelectedLink(links.find(l => l.id === openSession.pdl_visitor_link_id) || null);
     } else {
-      // Time in mode
       setActiveTab('time-in');
-      // Get approved links for this visitor
       const approvedLinks = links.filter(l => 
         l.visitor_id === visitor.id && l.approval_status === 'approved'
       );
@@ -139,9 +265,8 @@ export default function VisitationPage() {
       }
       if (approvedLinks.length === 1) {
         setSelectedLink(approvedLinks[0]);
-        // Check if conjugal eligible
         if (settings.conjugal_relationships.includes(approvedLinks[0].relationship)) {
-          setVisitType('regular'); // Let them choose
+          setVisitType('regular');
         } else {
           setVisitType('regular');
         }
@@ -165,7 +290,6 @@ export default function VisitationPage() {
   const handleTimeIn = () => {
     if (!foundVisitor || !selectedLink) return;
 
-    // Validate conjugal visit eligibility
     if (visitType === 'conjugal' && !settings.conjugal_relationships.includes(selectedLink.relationship)) {
       toast({
         title: 'Conjugal Not Allowed',
@@ -181,7 +305,7 @@ export default function VisitationPage() {
       pdl_visitor_link_id: selectedLink.id,
       visit_type: visitType,
       time_in: new Date().toISOString(),
-      time_in_method: 'manual_id',
+      time_in_method: idMethod === 'face' ? 'face_scan' : idMethod === 'qr' ? 'qr_scan' : 'manual_id',
       operator_id: user?.id || '',
     });
 
@@ -221,7 +345,7 @@ export default function VisitationPage() {
 
     updateVisitSession(targetSession.id, {
       time_out: new Date().toISOString(),
-      time_out_method: 'manual_id',
+      time_out_method: idMethod === 'face' ? 'face_scan' : idMethod === 'qr' ? 'qr_scan' : 'manual_id',
     });
 
     createAuditLog({
@@ -289,9 +413,9 @@ export default function VisitationPage() {
               <CardTitle className="text-lg">Visitor Identification</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Scanner Tabs */}
-              <Tabs defaultValue="manual" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+              {/* Identification Methods */}
+              <Tabs value={idMethod} onValueChange={(v) => setIdMethod(v as any)} className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="manual" className="flex items-center gap-2">
                     <Search className="w-4 h-4" />
                     Manual ID
@@ -299,6 +423,10 @@ export default function VisitationPage() {
                   <TabsTrigger value="qr" className="flex items-center gap-2">
                     <QrCode className="w-4 h-4" />
                     QR Scan
+                  </TabsTrigger>
+                  <TabsTrigger value="face" className="flex items-center gap-2">
+                    <Scan className="w-4 h-4" />
+                    Face Scan
                   </TabsTrigger>
                 </TabsList>
                 
@@ -310,6 +438,7 @@ export default function VisitationPage() {
                       placeholder="Enter 10-digit visitor code"
                       className="input-field font-mono text-lg"
                       maxLength={10}
+                      onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
                     />
                     <Button 
                       onClick={handleManualSearch}
@@ -325,7 +454,7 @@ export default function VisitationPage() {
                   <div className="space-y-4">
                     {scannerActive ? (
                       <div className="space-y-4">
-                        <div id="qr-reader" className="scanner-frame mx-auto max-w-sm" />
+                        <div id="qr-reader" className="scanner-frame mx-auto max-w-sm rounded-xl overflow-hidden" />
                         <Button 
                           variant="outline" 
                           onClick={stopQRScanner}
@@ -345,118 +474,176 @@ export default function VisitationPage() {
                     )}
                   </div>
                 </TabsContent>
+
+                <TabsContent value="face" className="mt-4">
+                  <div className="space-y-4">
+                    {faceLoading && (
+                      <div className="text-center py-8">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-2" />
+                        <p className="text-sm text-muted-foreground">Loading face detection...</p>
+                      </div>
+                    )}
+                    
+                    {!faceLoading && faceScanning ? (
+                      <div className="space-y-4">
+                        <div className="relative w-full max-w-sm mx-auto aspect-square rounded-2xl overflow-hidden bg-muted border-2 border-primary/50">
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="w-full h-full object-cover"
+                            style={{ transform: 'scaleX(-1)' }}
+                          />
+                          {/* Scan overlay */}
+                          <div className="absolute inset-8 border-2 border-primary/50 rounded-xl pointer-events-none">
+                            <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-primary rounded-tl-lg" />
+                            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-primary rounded-tr-lg" />
+                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-primary rounded-bl-lg" />
+                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary rounded-br-lg" />
+                          </div>
+                          <div className="absolute bottom-4 left-0 right-0 text-center">
+                            <Badge className="bg-background/80 text-foreground">
+                              <Scan className="w-3 h-3 mr-1 animate-pulse" />
+                              {faceMessage}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          onClick={stopFaceScanner}
+                          className="w-full"
+                        >
+                          Stop Face Scanner
+                        </Button>
+                      </div>
+                    ) : !faceLoading && (
+                      <Button 
+                        onClick={startFaceScanner}
+                        className="w-full btn-scanner h-24 text-lg"
+                        disabled={!isLoaded}
+                      >
+                        <Camera className="w-8 h-8 mr-3" />
+                        Start Face Recognition
+                      </Button>
+                    )}
+                  </div>
+                </TabsContent>
               </Tabs>
 
               {/* Found Visitor */}
-              {foundVisitor && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 rounded-xl bg-muted/30 border border-border"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-20 h-20 rounded-xl overflow-hidden bg-muted">
-                      {foundVisitor.photo_url ? (
-                        <img 
-                          src={foundVisitor.photo_url} 
-                          alt="Visitor" 
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <User className="w-10 h-10 text-muted-foreground/50" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-foreground">
-                        {foundVisitor.first_name} {foundVisitor.last_name}
-                      </h3>
-                      <p className="font-mono text-primary text-lg">{foundVisitor.visitor_code}</p>
-                      <Badge className="status-active mt-2">{foundVisitor.status}</Badge>
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={resetSelection}>
-                      <X className="w-5 h-5" />
-                    </Button>
-                  </div>
-
-                  {/* Select PDL Link */}
-                  {!getOpenSession(foundVisitor.id) && (
-                    <div className="mt-4 space-y-4">
-                      <div className="space-y-2">
-                        <Label>Select PDL to Visit</Label>
-                        <Select 
-                          value={selectedLink?.id || ''} 
-                          onValueChange={(val) => {
-                            const link = getVisitorLinks(foundVisitor.id).find(l => l.id === val);
-                            setSelectedLink(link || null);
-                          }}
-                        >
-                          <SelectTrigger className="input-field">
-                            <SelectValue placeholder="Select PDL" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {getVisitorLinks(foundVisitor.id).map(link => {
-                              const pdl = pdls.find(p => p.id === link.pdl_id);
-                              return (
-                                <SelectItem key={link.id} value={link.id}>
-                                  {pdl?.last_name}, {pdl?.first_name} - {RELATIONSHIP_LABELS[link.relationship]}
-                                  {isConjugalEligible(link.relationship) && ' ★'}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
+              <AnimatePresence>
+                {foundVisitor && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="p-4 rounded-xl bg-success/10 border border-success/30"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-20 h-20 rounded-xl overflow-hidden bg-muted flex-shrink-0">
+                        {foundVisitor.photo_url ? (
+                          <img 
+                            src={foundVisitor.photo_url} 
+                            alt="Visitor" 
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <User className="w-10 h-10 text-muted-foreground/50" />
+                          </div>
+                        )}
                       </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-foreground">
+                          {foundVisitor.first_name} {foundVisitor.last_name}
+                        </h3>
+                        <p className="font-mono text-primary text-lg">{foundVisitor.visitor_code}</p>
+                        <Badge className="status-active mt-2">{foundVisitor.status}</Badge>
+                      </div>
+                      <Button variant="ghost" size="icon" onClick={resetSelection}>
+                        <X className="w-5 h-5" />
+                      </Button>
+                    </div>
 
-                      {selectedLink && isConjugalEligible(selectedLink.relationship) && (
+                    {/* Time In Section */}
+                    {!getOpenSession(foundVisitor.id) && (
+                      <div className="mt-4 space-y-4">
                         <div className="space-y-2">
-                          <Label>Visit Type</Label>
-                          <Select value={visitType} onValueChange={(val: VisitType) => setVisitType(val)}>
+                          <Label>Select PDL to Visit</Label>
+                          <Select 
+                            value={selectedLink?.id || ''} 
+                            onValueChange={(val) => {
+                              const link = getVisitorLinks(foundVisitor.id).find(l => l.id === val);
+                              setSelectedLink(link || null);
+                            }}
+                          >
                             <SelectTrigger className="input-field">
-                              <SelectValue />
+                              <SelectValue placeholder="Select PDL" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="regular">Regular Visit</SelectItem>
-                              <SelectItem value="conjugal">Conjugal Visit</SelectItem>
+                              {getVisitorLinks(foundVisitor.id).map(link => {
+                                const pdl = pdls.find(p => p.id === link.pdl_id);
+                                return (
+                                  <SelectItem key={link.id} value={link.id}>
+                                    {pdl?.last_name}, {pdl?.first_name} - {RELATIONSHIP_LABELS[link.relationship]}
+                                    {isConjugalEligible(link.relationship) && ' ★'}
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                         </div>
-                      )}
 
-                      <Button 
-                        onClick={handleTimeIn}
-                        disabled={!selectedLink}
-                        className="w-full btn-scanner h-12"
-                      >
-                        <LogIn className="w-5 h-5 mr-2" />
-                        Record Time In
-                      </Button>
-                    </div>
-                  )}
+                        {selectedLink && isConjugalEligible(selectedLink.relationship) && (
+                          <div className="space-y-2">
+                            <Label>Visit Type</Label>
+                            <Select value={visitType} onValueChange={(val: VisitType) => setVisitType(val)}>
+                              <SelectTrigger className="input-field">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="regular">Regular Visit</SelectItem>
+                                <SelectItem value="conjugal">Conjugal Visit</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
 
-                  {/* Time Out for open session */}
-                  {getOpenSession(foundVisitor.id) && (
-                    <div className="mt-4">
-                      <p className="text-sm text-muted-foreground mb-3">
-                        Active session found. Time in: {new Date(getOpenSession(foundVisitor.id)!.time_in).toLocaleTimeString()}
-                      </p>
-                      <Button 
-                        onClick={() => handleTimeOut()}
-                        className="w-full bg-destructive hover:bg-destructive/90 h-12"
-                      >
-                        <LogOut className="w-5 h-5 mr-2" />
-                        Record Time Out
-                      </Button>
-                    </div>
-                  )}
-                </motion.div>
-              )}
+                        <Button 
+                          onClick={handleTimeIn}
+                          disabled={!selectedLink}
+                          className="w-full btn-scanner h-12"
+                        >
+                          <LogIn className="w-5 h-5 mr-2" />
+                          Record Time In
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Time Out Section */}
+                    {getOpenSession(foundVisitor.id) && (
+                      <div className="mt-4">
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Active session since: {new Date(getOpenSession(foundVisitor.id)!.time_in).toLocaleTimeString()}
+                        </p>
+                        <Button 
+                          onClick={() => handleTimeOut()}
+                          className="w-full bg-destructive hover:bg-destructive/90 h-12"
+                        >
+                          <LogOut className="w-5 h-5 mr-2" />
+                          Record Time Out
+                        </Button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </CardContent>
           </Card>
         </div>
 
-        {/* Active Sessions */}
+        {/* Active Sessions Sidebar */}
         <div className="space-y-6">
           <Card className="glass-card">
             <CardHeader>
@@ -477,37 +664,39 @@ export default function VisitationPage() {
                     const visitor = visitors.find(v => v.id === session.visitor_id);
                     const pdl = pdls.find(p => p.id === session.pdl_id);
                     return (
-                      <div 
-                        key={session.id} 
-                        className="p-3 rounded-lg bg-muted/30 flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium text-foreground text-sm">
-                            {visitor?.first_name} {visitor?.last_name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            → {pdl?.first_name} {pdl?.last_name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge className={session.visit_type === 'conjugal' ? 'status-approved' : 'status-active'} >
-                              {session.visit_type}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(session.time_in).toLocaleTimeString('en-US', { 
-                                hour: '2-digit', 
-                                minute: '2-digit' 
-                              })}
+                      <div key={session.id} className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                            <span className="text-xs font-semibold text-primary">
+                              {visitor?.first_name?.charAt(0)}{visitor?.last_name?.charAt(0)}
                             </span>
                           </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-foreground text-sm truncate">
+                              {visitor?.first_name} {visitor?.last_name}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              → {pdl?.first_name} {pdl?.last_name}
+                            </p>
+                          </div>
+                          <Badge className={session.visit_type === 'conjugal' ? 'status-approved' : 'status-active'} variant="outline">
+                            {session.visit_type}
+                          </Badge>
                         </div>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => handleTimeOut(session.id)}
-                          className="text-destructive border-destructive/30 hover:bg-destructive/10"
-                        >
-                          <LogOut className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
+                          <span className="text-xs text-muted-foreground">
+                            In: {new Date(session.time_in).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleTimeOut(session.id)}
+                            className="h-7 text-xs"
+                          >
+                            <LogOut className="w-3 h-3 mr-1" />
+                            Time Out
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
@@ -516,6 +705,7 @@ export default function VisitationPage() {
             </CardContent>
           </Card>
 
+          {/* Today's Completed */}
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
@@ -524,8 +714,32 @@ export default function VisitationPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-foreground">{completedSessions.length}</p>
-              <p className="text-sm text-muted-foreground">visits completed</p>
+              {completedSessions.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <p className="text-sm">No completed visits today</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[200px] overflow-y-auto scrollbar-thin">
+                  {completedSessions.slice(0, 5).map(session => {
+                    const visitor = visitors.find(v => v.id === session.visitor_id);
+                    return (
+                      <div key={session.id} className="flex items-center justify-between p-2 rounded bg-muted/20 text-sm">
+                        <span className="text-foreground truncate">
+                          {visitor?.first_name} {visitor?.last_name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(session.time_out!).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {completedSessions.length > 5 && (
+                    <p className="text-xs text-muted-foreground text-center pt-2">
+                      +{completedSessions.length - 5} more
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

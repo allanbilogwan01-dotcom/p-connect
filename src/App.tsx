@@ -13,6 +13,9 @@ import VisitorEnrollmentPage from "@/pages/VisitorEnrollmentPage";
 import KinDalawPage from "@/pages/KinDalawPage";
 import VisitationPage from "@/pages/VisitationPage";
 import ReportsPage from "@/pages/ReportsPage";
+import AnalyticsPage from "@/pages/AnalyticsPage";
+import UserManagementPage from "@/pages/UserManagementPage";
+import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +53,9 @@ function AppRoutes() {
         <Route path="kin-dalaw" element={<KinDalawPage />} />
         <Route path="visitation" element={<VisitationPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="users" element={<UserManagementPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
