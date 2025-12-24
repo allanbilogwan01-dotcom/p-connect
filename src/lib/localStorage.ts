@@ -134,6 +134,14 @@ export function createPDL(pdl: Omit<PDL, 'id' | 'created_at' | 'updated_at' | 'p
     ...pdl,
     id: generateId(),
     pdl_code,
+    // Transform text fields to uppercase
+    first_name: pdl.first_name.toUpperCase(),
+    middle_name: pdl.middle_name?.toUpperCase(),
+    last_name: pdl.last_name.toUpperCase(),
+    suffix: pdl.suffix?.toUpperCase(),
+    cell_block: pdl.cell_block.toUpperCase(),
+    cell_number: pdl.cell_number.toUpperCase(),
+    crime: pdl.crime?.toUpperCase(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -179,6 +187,14 @@ export function createVisitor(visitor: Omit<Visitor, 'id' | 'created_at' | 'upda
     ...visitor,
     id: generateId(),
     visitor_code: generateVisitorCode(),
+    // Transform text fields to uppercase
+    first_name: visitor.first_name.toUpperCase(),
+    middle_name: visitor.middle_name?.toUpperCase(),
+    last_name: visitor.last_name.toUpperCase(),
+    suffix: visitor.suffix?.toUpperCase(),
+    address: visitor.address.toUpperCase(),
+    valid_id_type: visitor.valid_id_type?.toUpperCase(),
+    valid_id_number: visitor.valid_id_number?.toUpperCase(),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
