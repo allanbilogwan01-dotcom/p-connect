@@ -42,6 +42,11 @@ export function useNotifications() {
   return context;
 }
 
+// Safe version that returns null if outside provider
+function useNotificationsSafe() {
+  return useContext(NotificationContext);
+}
+
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -155,8 +160,19 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 }
 
 export function NotificationBell() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } = useNotifications();
+  const context = useNotificationsSafe();
   const [open, setOpen] = useState(false);
+
+  // If context is not available, render a simple bell without notifications
+  if (!context) {
+    return (
+      <Button variant="ghost" size="icon" className="relative">
+        <Bell className="w-5 h-5 text-muted-foreground" />
+      </Button>
+    );
+  }
+
+  const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } = context;
 
   const getIcon = (type: Notification['type']) => {
     switch (type) {
