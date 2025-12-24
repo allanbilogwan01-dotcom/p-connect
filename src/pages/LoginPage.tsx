@@ -57,8 +57,8 @@ export default function LoginPage() {
               <Shield className="w-10 h-10 text-primary" />
             </div>
             <div>
-              <h1 className="text-4xl font-bold gold-text">JAIL IS</h1>
-              <p className="text-muted-foreground">Jail Information System</p>
+              <h1 className="text-4xl font-bold gold-text">WatchGuard</h1>
+              <p className="text-muted-foreground">Jail Visitation System</p>
             </div>
           </div>
         </motion.div>
@@ -105,7 +105,7 @@ export default function LoginPage() {
           transition={{ delay: 0.8 }}
           className="text-xs text-muted-foreground relative z-10"
         >
-          © 2024 Jail IS - Developed by JO1 Guiral MPT
+          © 2024 WatchGuard - Developed by JO1 Guiral MPT
         </motion.p>
       </div>
 
@@ -122,8 +122,8 @@ export default function LoginPage() {
               <Shield className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold gold-text">JAIL IS</h1>
-              <p className="text-xs text-muted-foreground">Visitor Management</p>
+              <h1 className="text-2xl font-bold gold-text">WatchGuard</h1>
+              <p className="text-xs text-muted-foreground">Jail Visitation System</p>
             </div>
           </div>
 
@@ -200,7 +200,7 @@ export default function LoginPage() {
           </div>
 
           <p className="text-center text-xs text-muted-foreground mt-6 lg:hidden">
-            © 2024 Jail IS - Developed by JO1 Guiral MPT
+            © 2024 WatchGuard - Developed by JO1 Guiral MPT
           </p>
         </motion.div>
       </div>

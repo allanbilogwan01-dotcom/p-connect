@@ -78,8 +78,8 @@ export default function MainLayout() {
                   <Shield className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h1 className="font-bold text-foreground">JAIL IS</h1>
-                  <p className="text-xs text-muted-foreground">Visitor Management</p>
+                  <h1 className="font-bold text-foreground gold-text">WatchGuard</h1>
+                  <p className="text-xs text-muted-foreground">Jail Visitation System</p>
                 </div>
               </motion.div>
             )}
@@ -180,7 +180,7 @@ export default function MainLayout() {
           <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
             <Shield className="w-6 h-6 text-primary" />
           </div>
-          <span className="font-bold text-foreground">JAIL IS</span>
+          <span className="font-bold gold-text">WatchGuard</span>
         </div>
         <Button
           variant="ghost"
