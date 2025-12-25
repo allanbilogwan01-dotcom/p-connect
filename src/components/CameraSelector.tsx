@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, ChevronDown, RefreshCw } from 'lucide-react';
+import { Camera, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useCameraContext } from '@/hooks/useCameraContext';
 
 interface CameraSelectorProps {
   onStream: (stream: MediaStream) => void;
@@ -18,7 +19,7 @@ interface CameraSelectorProps {
 
 export function useCameraDevices() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string>('');
+  const { selectedDeviceId, setSelectedDeviceId } = useCameraContext();
   const [isLoading, setIsLoading] = useState(false);
 
   const refreshDevices = useCallback(async () => {
@@ -32,19 +33,19 @@ export function useCameraDevices() {
       const videoDevices = allDevices.filter(d => d.kind === 'videoinput');
       setDevices(videoDevices);
       
-      if (videoDevices.length > 0 && !selectedDevice) {
-        setSelectedDevice(videoDevices[0].deviceId);
+      if (videoDevices.length > 0 && !selectedDeviceId) {
+        setSelectedDeviceId(videoDevices[0].deviceId);
       }
     } catch (error) {
       console.error('Error enumerating devices:', error);
     }
-  }, [selectedDevice]);
+  }, [selectedDeviceId, setSelectedDeviceId]);
 
   useEffect(() => {
     refreshDevices();
-  }, [refreshDevices]);
+  }, []);
 
-  return { devices, selectedDevice, setSelectedDevice, refreshDevices, isLoading, setIsLoading };
+  return { devices, selectedDeviceId, setSelectedDeviceId, refreshDevices, isLoading, setIsLoading };
 }
 
 export function CameraSelector({ 
@@ -53,7 +54,8 @@ export function CameraSelector({
   autoStart = true,
   className = ''
 }: CameraSelectorProps) {
-  const { devices, selectedDevice, setSelectedDevice, refreshDevices, isLoading, setIsLoading } = useCameraDevices();
+  const { devices, selectedDeviceId, setSelectedDeviceId, refreshDevices, isLoading, setIsLoading } = useCameraDevices();
+  const { setActive } = useCameraContext();
   const streamRef = useRef<MediaStream | null>(null);
 
   const startCamera = useCallback(async (deviceId?: string) => {
@@ -62,6 +64,7 @@ export function CameraSelector({
       // Stop existing stream
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
+        setActive(false);
       }
 
       const constraints: MediaStreamConstraints = {
@@ -72,30 +75,32 @@ export function CameraSelector({
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
+      setActive(true);
       onStream(stream);
     } catch (error) {
       onError?.(error as Error);
     } finally {
       setIsLoading(false);
     }
-  }, [onStream, onError, setIsLoading]);
+  }, [onStream, onError, setIsLoading, setActive]);
 
   useEffect(() => {
-    if (autoStart && selectedDevice) {
-      startCamera(selectedDevice);
+    if (autoStart && selectedDeviceId) {
+      startCamera(selectedDeviceId);
     }
-  }, [selectedDevice, autoStart, startCamera]);
+  }, [selectedDeviceId, autoStart, startCamera]);
 
   useEffect(() => {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
+        setActive(false);
       }
     };
-  }, []);
+  }, [setActive]);
 
   const handleDeviceChange = (deviceId: string) => {
-    setSelectedDevice(deviceId);
+    setSelectedDeviceId(deviceId);
     startCamera(deviceId);
   };
 
@@ -103,15 +108,15 @@ export function CameraSelector({
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <Select value={selectedDevice} onValueChange={handleDeviceChange}>
+      <Select value={selectedDeviceId} onValueChange={handleDeviceChange}>
         <SelectTrigger className="w-[200px] h-9 text-sm bg-background/50 border-border/50">
           <Camera className="w-4 h-4 mr-2" />
-          <SelectValue placeholder="Select camera" />
+          <SelectValue placeholder="SELECT CAMERA" />
         </SelectTrigger>
         <SelectContent>
           {devices.map((device, index) => (
             <SelectItem key={device.deviceId} value={device.deviceId}>
-              {device.label || `Camera ${index + 1}`}
+              {(device.label || `CAMERA ${index + 1}`).toUpperCase()}
             </SelectItem>
           ))}
         </SelectContent>
