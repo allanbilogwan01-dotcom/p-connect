@@ -68,8 +68,8 @@ export const PDLIDCard = forwardRef<HTMLDivElement, PDLIDCardProps>(({ pdl }, re
               <p className="text-white">{new Date(pdl.date_of_birth).toLocaleDateString()}</p>
             </div>
             <div>
-              <p className="text-slate-500">Cell Block</p>
-              <p className="text-white">{pdl.cell_block} - {pdl.cell_number}</p>
+              <p className="text-slate-500">Case No.</p>
+              <p className="text-white">{pdl.case_number || 'N/A'}</p>
             </div>
             <div className="col-span-2">
               <p className="text-slate-500">Commitment Date</p>

@@ -14,6 +14,8 @@ export interface User {
   last_login?: string;
 }
 
+export type PDLStatus = 'detained' | 'released' | 'transferred' | 'deceased';
+
 export interface PDL {
   id: string;
   pdl_code: string;
@@ -23,12 +25,11 @@ export interface PDL {
   suffix?: string;
   date_of_birth: string;
   gender: 'male' | 'female';
-  cell_block: string;
-  cell_number: string;
   date_of_commit: string;
   photo_url?: string;
-  crime?: string;
-  status: 'detained' | 'released' | 'transferred';
+  crimes: string[];
+  case_number?: string;
+  status: PDLStatus;
   created_at: string;
   updated_at: string;
 }

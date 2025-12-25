@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Users, Plus, Search, Filter, MoreHorizontal, 
-  Edit, Eye, Camera, Download, CreditCard, Check, RefreshCw, Scan, Loader2
+  Edit, Eye, Camera, Download, CreditCard, Check, RefreshCw, Scan, Loader2, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,11 +76,13 @@ export default function PDLMasterlistPage() {
     suffix: '',
     date_of_birth: '',
     gender: 'male' as 'male' | 'female',
-    cell_block: '',
-    cell_number: '',
     date_of_commit: '',
-    crime: '',
+    crimes: [] as string[],
+    case_number: '',
+    status: 'detained' as 'detained' | 'released' | 'transferred' | 'deceased',
   });
+  
+  const [newCrime, setNewCrime] = useState('');
 
   const filteredPDLs = pdls.filter(pdl => {
     const matchesSearch = 
@@ -261,15 +263,16 @@ export default function PDLMasterlistPage() {
       suffix: '',
       date_of_birth: '',
       gender: 'male',
-      cell_block: '',
-      cell_number: '',
       date_of_commit: '',
-      crime: '',
+      crimes: [],
+      case_number: '',
+      status: 'detained',
     });
     setEditingPDL(null);
     setCapturedPhoto(null);
     setCapturedEmbeddings([]);
     setBiometricProgress(0);
+    setNewCrime('');
     stopCamera();
     setIsDialogOpen(false);
   };
@@ -283,13 +286,36 @@ export default function PDLMasterlistPage() {
       suffix: pdl.suffix || '',
       date_of_birth: pdl.date_of_birth,
       gender: pdl.gender,
-      cell_block: pdl.cell_block,
-      cell_number: pdl.cell_number,
       date_of_commit: pdl.date_of_commit,
-      crime: pdl.crime || '',
+      crimes: pdl.crimes || [],
+      case_number: pdl.case_number || '',
+      status: pdl.status,
     });
     setCapturedPhoto(pdl.photo_url || null);
     setIsDialogOpen(true);
+  };
+  
+  const addCrime = () => {
+    if (newCrime.trim()) {
+      setFormData(prev => ({ ...prev, crimes: [...prev.crimes, newCrime.trim().toUpperCase()] }));
+      setNewCrime('');
+    }
+  };
+  
+  const removeCrime = (index: number) => {
+    setFormData(prev => ({ ...prev, crimes: prev.crimes.filter((_, i) => i !== index) }));
+  };
+  
+  const calculateAge = (dateOfBirth: string): number => {
+    if (!dateOfBirth) return 0;
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   const handlePrintID = () => {
@@ -327,6 +353,8 @@ export default function PDLMasterlistPage() {
         return <Badge className="status-released">RELEASED</Badge>;
       case 'transferred':
         return <Badge className="status-pending">TRANSFERRED</Badge>;
+      case 'deceased':
+        return <Badge className="status-blacklisted">DECEASED</Badge>;
       default:
         return <Badge variant="outline">{status.toUpperCase()}</Badge>;
     }
@@ -378,6 +406,7 @@ export default function PDLMasterlistPage() {
                 <SelectItem value="detained">DETAINED</SelectItem>
                 <SelectItem value="released">RELEASED</SelectItem>
                 <SelectItem value="transferred">TRANSFERRED</SelectItem>
+                <SelectItem value="deceased">DECEASED</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -394,7 +423,7 @@ export default function PDLMasterlistPage() {
                   <th>PDL CODE</th>
                   <th>NAME</th>
                   <th>GENDER</th>
-                  <th>CELL</th>
+                  <th>AGE</th>
                   <th>DATE OF COMMIT</th>
                   <th>STATUS</th>
                   <th className="text-right">ACTIONS</th>
@@ -442,7 +471,7 @@ export default function PDLMasterlistPage() {
                       </td>
                       <td className="uppercase">{pdl.gender}</td>
                       <td>
-                        <span className="text-sm uppercase">{pdl.cell_block} - {pdl.cell_number}</span>
+                        <span className="text-sm">{calculateAge(pdl.date_of_birth)} YRS</span>
                       </td>
                       <td>{new Date(pdl.date_of_commit).toLocaleDateString()}</td>
                       <td>{statusBadge(pdl.status)}</td>
@@ -630,24 +659,27 @@ export default function PDLMasterlistPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>CELL BLOCK *</Label>
+                <Label>AGE (AUTO-CALCULATED)</Label>
                 <Input
-                  value={formData.cell_block}
-                  onChange={(e) => setFormData(prev => ({ ...prev, cell_block: e.target.value.toUpperCase() }))}
-                  className="input-field uppercase"
-                  placeholder="E.G., BUILDING A"
-                  required
+                  value={formData.date_of_birth ? `${calculateAge(formData.date_of_birth)} YEARS OLD` : ''}
+                  className="input-field"
+                  disabled
+                  placeholder="ENTER DOB FIRST"
                 />
               </div>
               <div className="space-y-2">
-                <Label>CELL NUMBER *</Label>
-                <Input
-                  value={formData.cell_number}
-                  onChange={(e) => setFormData(prev => ({ ...prev, cell_number: e.target.value.toUpperCase() }))}
-                  className="input-field uppercase"
-                  placeholder="E.G., 101"
-                  required
-                />
+                <Label>STATUS *</Label>
+                <Select value={formData.status} onValueChange={(val: 'detained' | 'released' | 'transferred' | 'deceased') => setFormData(prev => ({ ...prev, status: val }))}>
+                  <SelectTrigger className="input-field">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="detained">DETAINED</SelectItem>
+                    <SelectItem value="released">RELEASED</SelectItem>
+                    <SelectItem value="transferred">TRANSFERRED</SelectItem>
+                    <SelectItem value="deceased">DECEASED</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>DATE OF COMMITMENT *</Label>
@@ -660,14 +692,43 @@ export default function PDLMasterlistPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>CRIME/OFFENSE</Label>
+                <Label>CASE NUMBER</Label>
                 <Input
-                  value={formData.crime}
-                  onChange={(e) => setFormData(prev => ({ ...prev, crime: e.target.value.toUpperCase() }))}
+                  value={formData.case_number}
+                  onChange={(e) => setFormData(prev => ({ ...prev, case_number: e.target.value.toUpperCase() }))}
                   className="input-field uppercase"
-                  placeholder="E.G., THEFT"
+                  placeholder="E.G., CR-2024-001"
                 />
               </div>
+            </div>
+            
+            {/* Crimes/Offenses Section */}
+            <div className="space-y-3">
+              <Label>CRIMES/OFFENSES COMMITTED</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={newCrime}
+                  onChange={(e) => setNewCrime(e.target.value.toUpperCase())}
+                  className="input-field uppercase flex-1"
+                  placeholder="ENTER CRIME/OFFENSE"
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
+                />
+                <Button type="button" onClick={addCrime} variant="secondary" size="icon">
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+              {formData.crimes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {formData.crimes.map((crime, index) => (
+                    <Badge key={index} variant="secondary" className="px-2 py-1 text-xs gap-1">
+                      {crime}
+                      <button type="button" onClick={() => removeCrime(index)} className="ml-1 hover:text-destructive">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -726,17 +787,27 @@ export default function PDLMasterlistPage() {
                   <p className="text-foreground uppercase">{viewingPDL.gender}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">CELL LOCATION</p>
-                  <p className="text-foreground uppercase">{viewingPDL.cell_block} - {viewingPDL.cell_number}</p>
+                  <p className="text-muted-foreground">AGE</p>
+                  <p className="text-foreground">{calculateAge(viewingPDL.date_of_birth)} YEARS OLD</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">COMMITMENT DATE</p>
                   <p className="text-foreground">{new Date(viewingPDL.date_of_commit).toLocaleDateString()}</p>
                 </div>
-                {viewingPDL.crime && (
+                {viewingPDL.case_number && (
+                  <div>
+                    <p className="text-muted-foreground">CASE NUMBER</p>
+                    <p className="text-foreground uppercase">{viewingPDL.case_number}</p>
+                  </div>
+                )}
+                {viewingPDL.crimes && viewingPDL.crimes.length > 0 && (
                   <div className="col-span-2">
-                    <p className="text-muted-foreground">CRIME/OFFENSE</p>
-                    <p className="text-foreground uppercase">{viewingPDL.crime}</p>
+                    <p className="text-muted-foreground">CRIMES/OFFENSES</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {viewingPDL.crimes.map((crime, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">{crime}</Badge>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
