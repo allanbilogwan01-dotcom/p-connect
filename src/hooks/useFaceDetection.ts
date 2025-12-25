@@ -21,17 +21,12 @@ export function useFaceDetection() {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      // Load models from CDN - using more accurate models for better recognition
       const modelUrl = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
       
       await Promise.all([
-        // Use SSD MobileNet for better detection accuracy (vs TinyFaceDetector)
         faceapi.nets.ssdMobilenetv1.loadFromUri(modelUrl),
-        // Load landmark model for face alignment
         faceapi.nets.faceLandmark68Net.loadFromUri(modelUrl),
-        // Load recognition model for face descriptors
         faceapi.nets.faceRecognitionNet.loadFromUri(modelUrl),
-        // Also load tiny face detector as fallback
         faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl),
       ]);
       
@@ -52,9 +47,8 @@ export function useFaceDetection() {
     }
 
     try {
-      // Use SSD MobileNet for more accurate detection
-      // Set minConfidence higher for better quality detections
-      const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+      // Use SSD MobileNet with high confidence threshold for accuracy
+      const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.6 });
       
       let detection = await faceapi
         .detectSingleFace(input, options)
@@ -64,8 +58,8 @@ export function useFaceDetection() {
       // Fallback to TinyFaceDetector if SSD doesn't find a face
       if (!detection) {
         const tinyOptions = new faceapi.TinyFaceDetectorOptions({ 
-          inputSize: 512,  // Higher input size for better accuracy
-          scoreThreshold: 0.5 
+          inputSize: 608,
+          scoreThreshold: 0.6 
         });
         detection = await faceapi
           .detectSingleFace(input, tinyOptions)
@@ -89,7 +83,7 @@ export function useFaceDetection() {
     }
 
     try {
-      const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+      const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.6 });
       
       const detections = await faceapi
         .detectAllFaces(input, options)
@@ -111,17 +105,19 @@ export function useFaceDetection() {
   }, []);
 
   const getMatchScore = useCallback((distance: number): number => {
-    // Convert euclidean distance to similarity score (0-1)
-    // Lower distance = higher similarity
-    // Using a more aggressive curve for better discrimination
-    // Typical face-api distances: 
-    // - Same person: 0.3 - 0.5
-    // - Different person: 0.6+
-    if (distance <= 0.35) return 1.0;
-    if (distance >= 0.8) return 0.0;
+    // Stricter matching thresholds for high accuracy
+    // Same person typically has distance < 0.4
+    // Different person typically has distance > 0.5
+    if (distance <= 0.3) return 1.0;
+    if (distance >= 0.6) return 0.0;
     
-    // Smooth transition between thresholds
-    return Math.max(0, 1 - (distance / 0.6));
+    // Linear interpolation between thresholds
+    return Math.max(0, 1 - (distance / 0.5));
+  }, []);
+
+  const isMatch = useCallback((distance: number, threshold: number = 0.45): boolean => {
+    // Strict threshold for verification
+    return distance < threshold;
   }, []);
 
   return {
@@ -131,6 +127,7 @@ export function useFaceDetection() {
     detectAllFaces,
     compareFaces,
     getMatchScore,
+    isMatch,
   };
 }
 

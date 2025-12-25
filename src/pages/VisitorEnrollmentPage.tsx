@@ -72,7 +72,7 @@ export default function VisitorEnrollmentPage() {
   const { toast } = useToast();
 
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
-  const { devices, selectedDevice, setSelectedDevice } = useCameraDevices();
+  const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
   const pdls = getPDLs();
 
   useEffect(() => {
@@ -129,10 +129,10 @@ export default function VisitorEnrollmentPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (showCamera && selectedDevice) {
-      startCamera(selectedDevice);
+    if (showCamera && selectedDeviceId) {
+      startCamera(selectedDeviceId);
     }
-  }, [selectedDevice, showCamera, startCamera]);
+  }, [selectedDeviceId, showCamera, startCamera]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -163,8 +163,8 @@ export default function VisitorEnrollmentPage() {
 
     try {
       const constraints: MediaStreamConstraints = {
-        video: selectedDevice 
-          ? { deviceId: { exact: selectedDevice }, width: 640, height: 480 }
+        video: selectedDeviceId 
+          ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
           : { facingMode: 'user', width: 640, height: 480 }
       };
       
@@ -186,7 +186,7 @@ export default function VisitorEnrollmentPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDevice, toast]);
+  }, [isLoaded, selectedDeviceId, toast]);
 
   const runEnrollmentCapture = async (visitorId: string) => {
     if (!videoRef.current || !isLoaded) return;
@@ -626,7 +626,7 @@ export default function VisitorEnrollmentPage() {
                 
                 {/* Camera Selector */}
                 {devices.length > 1 && showCamera && (
-                  <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                  <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
                     <SelectTrigger className="w-48 h-8 text-xs">
                       <Camera className="w-3 h-3 mr-1" />
                       <SelectValue placeholder="Select camera" />
@@ -825,7 +825,7 @@ export default function VisitorEnrollmentPage() {
                 
                 {/* Camera Selector for Biometrics */}
                 {devices.length > 1 && (
-                  <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                  <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
                     <SelectTrigger className="w-64 h-9 text-sm">
                       <Camera className="w-4 h-4 mr-2" />
                       <SelectValue placeholder="Select camera" />

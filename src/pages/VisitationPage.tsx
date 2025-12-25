@@ -60,7 +60,7 @@ export default function VisitationPage() {
   const settings = getSettings();
 
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
-  const { devices, selectedDevice, setSelectedDevice } = useCameraDevices();
+  const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
 
   useEffect(() => {
     loadModels();
@@ -79,7 +79,7 @@ export default function VisitationPage() {
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
       
-      const cameraId = selectedDevice || { facingMode: "environment" };
+      const cameraId = selectedDeviceId || { facingMode: "environment" };
       
       await scanner.start(
         cameraId,
@@ -119,8 +119,8 @@ export default function VisitationPage() {
     
     try {
       const constraints: MediaStreamConstraints = {
-        video: selectedDevice 
-          ? { deviceId: { exact: selectedDevice }, width: 640, height: 480 }
+        video: selectedDeviceId 
+          ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
           : { facingMode: 'user', width: 640, height: 480 }
       };
       
@@ -139,7 +139,7 @@ export default function VisitationPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDevice, toast]);
+  }, [isLoaded, selectedDeviceId, toast]);
 
   const stopFaceScanner = useCallback(() => {
     if (streamRef.current) {
@@ -462,7 +462,7 @@ export default function VisitationPage() {
                     {/* Camera Selector for QR */}
                     {devices.length > 1 && !scannerActive && (
                       <div className="flex justify-center">
-                        <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
                           <SelectTrigger className="w-64 h-9 text-sm">
                             <Camera className="w-4 h-4 mr-2" />
                             <SelectValue placeholder="Select camera" />
@@ -513,7 +513,7 @@ export default function VisitationPage() {
                     {/* Camera Selector for Face */}
                     {devices.length > 1 && !faceScanning && !faceLoading && (
                       <div className="flex justify-center">
-                        <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
                           <SelectTrigger className="w-64 h-9 text-sm">
                             <Camera className="w-4 h-4 mr-2" />
                             <SelectValue placeholder="Select camera" />

@@ -61,7 +61,7 @@ export default function PDLMasterlistPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const { devices, selectedDevice, setSelectedDevice } = useCameraDevices();
+  const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
   const { setActive: setCameraActive } = useCameraContext();
 
@@ -120,10 +120,10 @@ export default function PDLMasterlistPage() {
   }, [toast, setCameraActive]);
 
   useEffect(() => {
-    if (showCamera && selectedDevice) {
-      startCamera(selectedDevice);
+    if (showCamera && selectedDeviceId) {
+      startCamera(selectedDeviceId);
     }
-  }, [selectedDevice, showCamera, startCamera]);
+  }, [selectedDeviceId, showCamera, startCamera]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -155,8 +155,8 @@ export default function PDLMasterlistPage() {
 
     try {
       const constraints: MediaStreamConstraints = {
-        video: selectedDevice 
-          ? { deviceId: { exact: selectedDevice }, width: 640, height: 480 }
+        video: selectedDeviceId 
+          ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
           : { facingMode: 'user', width: 640, height: 480 }
       };
       
@@ -178,7 +178,7 @@ export default function PDLMasterlistPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDevice, toast, setCameraActive]);
+  }, [isLoaded, selectedDeviceId, toast, setCameraActive]);
 
   const runEnrollmentCapture = useCallback(async (pdlId: string) => {
     if (!videoRef.current || !isLoaded || !enrollingBiometrics) return;
@@ -518,7 +518,7 @@ export default function PDLMasterlistPage() {
               
               {/* Camera Selector */}
               {devices.length > 1 && showCamera && (
-                <Select value={selectedDevice} onValueChange={setSelectedDevice}>
+                <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
                   <SelectTrigger className="w-48 h-8 text-xs">
                     <Camera className="w-3 h-3 mr-1" />
                     <SelectValue placeholder="Select camera" />

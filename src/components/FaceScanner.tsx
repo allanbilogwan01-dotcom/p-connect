@@ -4,6 +4,8 @@ import { Camera, Loader2, Check, X, AlertCircle, Scan } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFaceDetection, descriptorToArray, arrayToDescriptor } from '@/hooks/useFaceDetection';
 import { getBiometrics, getVisitorById, getSettings } from '@/lib/localStorage';
+import { useCameraContext } from '@/hooks/useCameraContext';
+import { CameraSelector } from '@/components/CameraSelector';
 import type { Visitor } from '@/types';
 
 interface FaceScannerProps {
@@ -21,7 +23,7 @@ export default function FaceScanner({
 }: FaceScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<'idle' | 'detecting' | 'success' | 'failed'>('idle');
-  const [message, setMessage] = useState('Position your face in the frame');
+  const [message, setMessage] = useState('POSITION YOUR FACE IN THE FRAME');
   const [capturedEmbeddings, setCapturedEmbeddings] = useState<number[][]>([]);
   const [progress, setProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -30,6 +32,7 @@ export default function FaceScanner({
   const animationRef = useRef<number | null>(null);
   
   const { isLoaded, isLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
+  const { setActive, selectedDeviceId } = useCameraContext();
   const settings = getSettings();
 
   useEffect(() => {
@@ -38,21 +41,26 @@ export default function FaceScanner({
 
   const startCamera = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 }
-      });
+      const constraints: MediaStreamConstraints = {
+        video: selectedDeviceId 
+          ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
+          : { facingMode: 'user', width: 640, height: 480 }
+      };
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      setActive(true);
       setIsScanning(true);
       setScanStatus('detecting');
     } catch (err) {
-      setMessage('Camera access denied. Please allow camera permissions.');
+      setMessage('CAMERA ACCESS DENIED. PLEASE ALLOW CAMERA PERMISSIONS.');
       setScanStatus('failed');
     }
-  }, []);
+  }, [selectedDeviceId, setActive]);
 
   const stopCamera = useCallback(() => {
     if (animationRef.current) {
@@ -63,8 +71,9 @@ export default function FaceScanner({
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+    setActive(false);
     setIsScanning(false);
-  }, []);
+  }, [setActive]);
 
   const runDetection = useCallback(async () => {
     if (!videoRef.current || !isLoaded || scanStatus !== 'detecting') return;
@@ -82,7 +91,7 @@ export default function FaceScanner({
           
           if (newEmbeddings.length >= 5) {
             setScanStatus('success');
-            setMessage('Face enrolled successfully!');
+            setMessage('FACE ENROLLED SUCCESSFULLY!');
             stopCamera();
             setTimeout(() => {
               onEnrollComplete?.(newEmbeddings);
@@ -90,7 +99,7 @@ export default function FaceScanner({
             return newEmbeddings;
           }
           
-          setMessage(`Capturing... ${newEmbeddings.length}/5`);
+          setMessage(`CAPTURING... ${newEmbeddings.length}/5`);
           return newEmbeddings;
         });
         
@@ -121,13 +130,17 @@ export default function FaceScanner({
           }
         }
         
+        // Use strict thresholds for high accuracy
+        const threshold = settings.face_recognition_threshold || 0.7;
+        const margin = settings.face_recognition_margin || 0.15;
+        
         if (bestMatch && 
-            bestMatch.score >= settings.face_recognition_threshold &&
-            (bestMatch.score - secondBest) >= settings.face_recognition_margin) {
+            bestMatch.score >= threshold &&
+            (bestMatch.score - secondBest) >= margin) {
           const visitor = getVisitorById(bestMatch.visitorId);
           if (visitor) {
             setScanStatus('success');
-            setMessage(`Matched: ${visitor.first_name} ${visitor.last_name}`);
+            setMessage(`MATCHED: ${visitor.first_name} ${visitor.last_name}`.toUpperCase());
             stopCamera();
             setTimeout(() => {
               onVerifyComplete?.(visitor, bestMatch.score);
@@ -136,10 +149,10 @@ export default function FaceScanner({
           }
         }
         
-        setMessage('Scanning...');
+        setMessage('SCANNING...');
       }
     } else {
-      setMessage('Position your face in the frame');
+      setMessage('POSITION YOUR FACE IN THE FRAME');
     }
 
     // Continue detection loop
@@ -177,6 +190,21 @@ export default function FaceScanner({
     onVerifyComplete?.(null, 0);
   };
 
+  const handleCameraStream = useCallback((stream: MediaStream) => {
+    // Stop current stream if exists
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    streamRef.current = stream;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play();
+    }
+    setActive(true);
+    setIsScanning(true);
+    setScanStatus('detecting');
+  }, [setActive]);
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -184,19 +212,26 @@ export default function FaceScanner({
       exit={{ opacity: 0, scale: 0.95 }}
       className="flex flex-col items-center gap-4"
     >
+      {/* Camera Selector */}
+      <CameraSelector 
+        onStream={handleCameraStream}
+        autoStart={false}
+        className="mb-2"
+      />
+      
       {/* Video Container */}
       <div className="relative w-80 h-80 rounded-2xl overflow-hidden bg-muted border-2 border-primary/30">
         {isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10">
             <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
-            <p className="text-sm text-muted-foreground">Loading face detection...</p>
+            <p className="text-sm text-muted-foreground">LOADING FACE DETECTION...</p>
           </div>
         )}
         
         {!isScanning && !isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <Camera className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <p className="text-sm text-muted-foreground">Camera not started</p>
+            <p className="text-sm text-muted-foreground">CAMERA NOT STARTED</p>
           </div>
         )}
         
@@ -284,18 +319,18 @@ export default function FaceScanner({
         {!isScanning && scanStatus !== 'success' && (
           <Button onClick={startCamera} className="btn-scanner" disabled={isLoading}>
             <Camera className="w-4 h-4 mr-2" />
-            Start Camera
+            START CAMERA
           </Button>
         )}
         
         {mode === 'verify' && isScanning && (
           <Button variant="outline" onClick={handleNoMatch}>
-            Not Found - Manual Entry
+            NOT FOUND - MANUAL ENTRY
           </Button>
         )}
         
         <Button variant="outline" onClick={handleCancel}>
-          Cancel
+          CANCEL
         </Button>
       </div>
     </motion.div>
