@@ -691,42 +691,99 @@ export default function PDLMasterlistPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label>CASE NUMBER</Label>
-                <Input
-                  value={formData.case_number}
-                  onChange={(e) => setFormData(prev => ({ ...prev, case_number: e.target.value.toUpperCase() }))}
-                  className="input-field uppercase"
-                  placeholder="E.G., CR-2024-001"
-                />
-              </div>
             </div>
             
-            {/* Crimes/Offenses Section */}
-            <div className="space-y-3">
-              <Label>CRIMES/OFFENSES COMMITTED</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={newCrime}
-                  onChange={(e) => setNewCrime(e.target.value.toUpperCase())}
-                  className="input-field uppercase flex-1"
-                  placeholder="ENTER CRIME/OFFENSE"
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
-                />
-                <Button type="button" onClick={addCrime} variant="secondary" size="icon">
+            {/* Crimes/Offenses and Case Number Section */}
+            <div className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">CRIMES/OFFENSES & CASE NUMBER</Label>
+                <Button 
+                  type="button" 
+                  onClick={addCrime} 
+                  variant="outline" 
+                  size="sm"
+                  className="h-8 gap-1"
+                >
                   <Plus className="w-4 h-4" />
+                  ADD OFFENSE
                 </Button>
               </div>
+              
+              {/* Empty state - input for first crime */}
+              {formData.crimes.length === 0 && (
+                <div className="space-y-3 p-3 rounded-lg border border-dashed border-border bg-background">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">CRIME/OFFENSE COMMITTED</Label>
+                    <Input
+                      value={newCrime}
+                      onChange={(e) => setNewCrime(e.target.value.toUpperCase())}
+                      className="input-field uppercase"
+                      placeholder="ENTER CRIME/OFFENSE"
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">CASE NUMBER</Label>
+                    <Input
+                      value={formData.case_number}
+                      onChange={(e) => setFormData(prev => ({ ...prev, case_number: e.target.value.toUpperCase() }))}
+                      className="input-field uppercase"
+                      placeholder="E.G., CR-2024-001"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* Added crimes list */}
               {formData.crimes.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-3">
                   {formData.crimes.map((crime, index) => (
-                    <Badge key={index} variant="secondary" className="px-2 py-1 text-xs gap-1">
-                      {crime}
-                      <button type="button" onClick={() => removeCrime(index)} className="ml-1 hover:text-destructive">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </Badge>
+                    <div key={index} className="flex items-center gap-2 p-3 rounded-lg border border-border bg-background">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium uppercase">{crime}</p>
+                        {index === 0 && formData.case_number && (
+                          <p className="text-xs text-muted-foreground mt-0.5">Case: {formData.case_number}</p>
+                        )}
+                      </div>
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeCrime(index)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
                   ))}
+                  
+                  {/* Case number input when crimes exist */}
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-xs text-muted-foreground">CASE NUMBER</Label>
+                    <Input
+                      value={formData.case_number}
+                      onChange={(e) => setFormData(prev => ({ ...prev, case_number: e.target.value.toUpperCase() }))}
+                      className="input-field uppercase"
+                      placeholder="E.G., CR-2024-001"
+                    />
+                  </div>
+                  
+                  {/* Add more crime input */}
+                  <div className="space-y-2 pt-2 border-t border-dashed border-border">
+                    <Label className="text-xs text-muted-foreground">ADD ANOTHER OFFENSE</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={newCrime}
+                        onChange={(e) => setNewCrime(e.target.value.toUpperCase())}
+                        className="input-field uppercase flex-1"
+                        placeholder="ENTER CRIME/OFFENSE"
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
+                      />
+                      <Button type="button" onClick={addCrime} variant="secondary" size="icon">
+                        <Plus className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
