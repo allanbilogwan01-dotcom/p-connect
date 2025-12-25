@@ -76,33 +76,36 @@ export default function VisitationPage() {
 
   const startQRScanner = async () => {
     try {
-      // Request camera permission first
-      await navigator.mediaDevices.getUserMedia({ video: true });
-      
       // Stop any existing scanner
       if (scannerRef.current) {
         try {
           await scannerRef.current.stop();
-        } catch (e) {
-          // Ignore stop errors
+        } catch {
+          // ignore
         }
         scannerRef.current = null;
       }
-      
-      const scanner = new Html5Qrcode("qr-reader");
+
+      // Request camera permission (then immediately release it)
+      const permStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      permStream.getTracks().forEach((t) => t.stop());
+
+      // Render the target element before initializing Html5Qrcode
+      setScannerActive(true);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      const scanner = new Html5Qrcode('qr-reader');
       scannerRef.current = scanner;
-      
-      // Use selected camera or default to environment facing
-      const cameraConfig = selectedDeviceId 
-        ? { deviceId: { exact: selectedDeviceId } }
-        : { facingMode: "environment" };
-      
+
+      // html5-qrcode expects a deviceId string OR { facingMode }
+      const cameraIdOrConfig = selectedDeviceId || { facingMode: 'environment' as const };
+
       await scanner.start(
-        cameraConfig,
-        { 
-          fps: 10, 
+        cameraIdOrConfig,
+        {
+          fps: 10,
           qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
+          aspectRatio: 1.0,
         },
         (decodedText) => {
           handleCodeScanned(decodedText, 'qr_scan');
@@ -110,9 +113,10 @@ export default function VisitationPage() {
         },
         () => {}
       );
-      setScannerActive(true);
     } catch (error: any) {
       console.error('QR Scanner error:', error);
+      setScannerActive(false);
+
       let message = 'Unable to start QR scanner.';
       if (error?.name === 'NotAllowedError') {
         message = 'Camera permission denied. Please allow camera access.';
@@ -120,7 +124,10 @@ export default function VisitationPage() {
         message = 'No camera found on this device.';
       } else if (error?.name === 'NotReadableError') {
         message = 'Camera is in use by another application.';
+      } else if (typeof error?.message === 'string' && error.message.trim()) {
+        message = `Unable to start QR scanner: ${error.message}`;
       }
+
       toast({
         title: 'Scanner Error',
         description: message,
@@ -130,10 +137,16 @@ export default function VisitationPage() {
   };
 
   const stopQRScanner = () => {
-    if (scannerRef.current) {
-      scannerRef.current.stop().catch(() => {});
-      scannerRef.current = null;
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+
+    if (scanner) {
+      scanner
+        .stop()
+        .then(() => scanner.clear())
+        .catch(() => {});
     }
+
     setScannerActive(false);
   };
 
@@ -145,43 +158,48 @@ export default function VisitationPage() {
       });
       return;
     }
-    
+
     try {
       // Stop any existing stream first
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
       }
-      
+
+      // Mount the <video> element first, then attach the stream
+      setFaceMessage('Starting camera...');
+      setFaceScanning(true);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
       const constraints: MediaStreamConstraints = {
-        video: selectedDeviceId 
+        video: selectedDeviceId
           ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
-          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
+          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       };
-      
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        // Wait for video to be ready
-        await new Promise<void>((resolve, reject) => {
-          const video = videoRef.current!;
-          video.onloadedmetadata = () => {
-            video.play()
-              .then(() => resolve())
-              .catch(reject);
-          };
-          video.onerror = () => reject(new Error('Video failed to load'));
-          // Timeout after 5 seconds
-          setTimeout(() => reject(new Error('Video load timeout')), 5000);
-        });
-      }
-      
-      setFaceScanning(true);
+
+      const video = videoRef.current;
+      if (!video) throw new Error('Video element not ready');
+
+      video.srcObject = stream;
+      video.setAttribute('playsinline', 'true');
+      video.muted = true;
+
+      await video.play();
+
       setFaceMessage('Scanning face...');
     } catch (err: any) {
       console.error('Face scanner error:', err);
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      setFaceScanning(false);
+      setFaceMessage('Position face in frame');
+
       let message = 'Unable to access camera for face scanning.';
       if (err?.name === 'NotAllowedError') {
         message = 'Camera permission denied. Please allow camera access.';
@@ -189,7 +207,10 @@ export default function VisitationPage() {
         message = 'No camera found on this device.';
       } else if (err?.name === 'NotReadableError') {
         message = 'Camera is in use by another application.';
+      } else if (typeof err?.message === 'string' && err.message.trim()) {
+        message = `Unable to start face scan: ${err.message}`;
       }
+
       toast({
         title: 'Camera Error',
         description: message,
