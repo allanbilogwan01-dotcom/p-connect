@@ -69,7 +69,7 @@ export const PDLIDCard = forwardRef<HTMLDivElement, PDLIDCardProps>(({ pdl }, re
             </div>
             <div>
               <p className="text-slate-500">Case No.</p>
-              <p className="text-white">{pdl.case_number || 'N/A'}</p>
+              <p className="text-white">{pdl.crimes?.[0]?.case_number || 'N/A'}</p>
             </div>
             <div className="col-span-2">
               <p className="text-slate-500">Commitment Date</p>

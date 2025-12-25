@@ -139,8 +139,10 @@ export function createPDL(pdl: Omit<PDL, 'id' | 'created_at' | 'updated_at' | 'p
     middle_name: pdl.middle_name?.toUpperCase(),
     last_name: pdl.last_name.toUpperCase(),
     suffix: pdl.suffix?.toUpperCase(),
-    crimes: pdl.crimes.map(c => c.toUpperCase()),
-    case_number: pdl.case_number?.toUpperCase(),
+    crimes: pdl.crimes.map(c => ({
+      offense: c.offense.toUpperCase(),
+      case_number: c.case_number.toUpperCase(),
+    })),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

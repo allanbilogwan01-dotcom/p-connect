@@ -35,7 +35,6 @@ import { RELATIONSHIP_LABELS } from '@/types';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useCameraContext } from '@/hooks/useCameraContext';
 import { useAudioFeedback } from '@/hooks/useAudioFeedback';
-import { CameraPreview } from '@/components/CameraPreview';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
@@ -606,9 +605,23 @@ export default function VisitationPage() {
                       </div>
                     )}
                     
-                    {/* Camera Preview Toggle - only show when not actively scanning */}
-                    {!faceLoading && !faceScanning && (
-                      <CameraPreview />
+                    {/* Camera selector for face scan */}
+                    {devices.length > 1 && !faceScanning && (
+                      <div className="flex justify-center">
+                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                          <SelectTrigger className="w-64 h-9 text-sm">
+                            <Camera className="w-4 h-4 mr-2" />
+                            <SelectValue placeholder="Select camera" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {devices.map((device, idx) => (
+                              <SelectItem key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Camera ${idx + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     )}
                     
                     {!faceLoading && faceScanning ? (
