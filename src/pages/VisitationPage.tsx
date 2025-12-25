@@ -34,6 +34,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useCameraContext } from '@/hooks/useCameraContext';
+import { useAudioFeedback } from '@/hooks/useAudioFeedback';
+import { CameraPreview } from '@/components/CameraPreview';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
@@ -63,6 +65,7 @@ export default function VisitationPage() {
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
   const { setActive: setCameraActive } = useCameraContext();
+  const { playQRSuccessBeep, playFaceMatchBeep, playErrorBeep } = useAudioFeedback();
 
   useEffect(() => {
     loadModels();
@@ -110,6 +113,7 @@ export default function VisitationPage() {
           aspectRatio: 1.0,
         },
         (decodedText) => {
+          playQRSuccessBeep(); // Play success beep on QR scan
           handleCodeScanned(decodedText, 'qr_scan');
           stopQRScanner();
         },
@@ -269,11 +273,12 @@ export default function VisitationPage() {
         }
       }
       
-      if (bestMatch && 
+        if (bestMatch && 
           bestMatch.score >= settings.face_recognition_threshold &&
           (bestMatch.score - secondBest) >= settings.face_recognition_margin) {
         const visitor = getVisitorById(bestMatch.visitorId);
         if (visitor && visitor.status === 'active') {
+          playFaceMatchBeep(); // Play success beep on face match
           stopFaceScanner();
           setFoundVisitor(visitor);
           
@@ -601,23 +606,9 @@ export default function VisitationPage() {
                       </div>
                     )}
                     
-                    {/* Camera Selector for Face */}
-                    {devices.length > 1 && !faceScanning && !faceLoading && (
-                      <div className="flex justify-center">
-                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                          <SelectTrigger className="w-64 h-9 text-sm">
-                            <Camera className="w-4 h-4 mr-2" />
-                            <SelectValue placeholder="Select camera" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {devices.map((device, idx) => (
-                              <SelectItem key={device.deviceId} value={device.deviceId}>
-                                {device.label || `Camera ${idx + 1}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                    {/* Camera Preview Toggle - only show when not actively scanning */}
+                    {!faceLoading && !faceScanning && (
+                      <CameraPreview />
                     )}
                     
                     {!faceLoading && faceScanning ? (
