@@ -76,14 +76,34 @@ export default function VisitationPage() {
 
   const startQRScanner = async () => {
     try {
+      // Request camera permission first
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      // Stop any existing scanner
+      if (scannerRef.current) {
+        try {
+          await scannerRef.current.stop();
+        } catch (e) {
+          // Ignore stop errors
+        }
+        scannerRef.current = null;
+      }
+      
       const scanner = new Html5Qrcode("qr-reader");
       scannerRef.current = scanner;
       
-      const cameraId = selectedDeviceId || { facingMode: "environment" };
+      // Use selected camera or default to environment facing
+      const cameraConfig = selectedDeviceId 
+        ? { deviceId: { exact: selectedDeviceId } }
+        : { facingMode: "environment" };
       
       await scanner.start(
-        cameraId,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        cameraConfig,
+        { 
+          fps: 10, 
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        },
         (decodedText) => {
           handleCodeScanned(decodedText, 'qr_scan');
           stopQRScanner();
@@ -91,10 +111,19 @@ export default function VisitationPage() {
         () => {}
       );
       setScannerActive(true);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('QR Scanner error:', error);
+      let message = 'Unable to start QR scanner.';
+      if (error?.name === 'NotAllowedError') {
+        message = 'Camera permission denied. Please allow camera access.';
+      } else if (error?.name === 'NotFoundError') {
+        message = 'No camera found on this device.';
+      } else if (error?.name === 'NotReadableError') {
+        message = 'Camera is in use by another application.';
+      }
       toast({
         title: 'Scanner Error',
-        description: 'Unable to start QR scanner. Check camera permissions.',
+        description: message,
         variant: 'destructive',
       });
     }
@@ -118,24 +147,52 @@ export default function VisitationPage() {
     }
     
     try {
+      // Stop any existing stream first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      
       const constraints: MediaStreamConstraints = {
         video: selectedDeviceId 
-          ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
-          : { facingMode: 'user', width: 640, height: 480 }
+          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
       };
       
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        // Wait for video to be ready
+        await new Promise<void>((resolve, reject) => {
+          const video = videoRef.current!;
+          video.onloadedmetadata = () => {
+            video.play()
+              .then(() => resolve())
+              .catch(reject);
+          };
+          video.onerror = () => reject(new Error('Video failed to load'));
+          // Timeout after 5 seconds
+          setTimeout(() => reject(new Error('Video load timeout')), 5000);
+        });
       }
+      
       setFaceScanning(true);
       setFaceMessage('Scanning face...');
-    } catch (err) {
+    } catch (err: any) {
+      console.error('Face scanner error:', err);
+      let message = 'Unable to access camera for face scanning.';
+      if (err?.name === 'NotAllowedError') {
+        message = 'Camera permission denied. Please allow camera access.';
+      } else if (err?.name === 'NotFoundError') {
+        message = 'No camera found on this device.';
+      } else if (err?.name === 'NotReadableError') {
+        message = 'Camera is in use by another application.';
+      }
       toast({
         title: 'Camera Error',
-        description: 'Unable to access camera for face scanning.',
+        description: message,
         variant: 'destructive',
       });
     }
