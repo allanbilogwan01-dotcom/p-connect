@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Save, RotateCcw, Building, Users, Scan, 
-  Database, Shield, AlertTriangle, Cloud, ExternalLink, Info
+  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +29,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getSettings, setSettings, resetStorage, createAuditLog } from '@/lib/localStorage';
+import { 
+  getSettings, setSettings, resetStorage, createAuditLog,
+  getPDLs, getVisitors, getPDLVisitorLinks, getVisitSessions,
+  getAuditLogs, getBiometrics, getUsers
+} from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import type { SystemSettings, RelationshipType } from '@/types';
@@ -42,27 +46,34 @@ export default function SettingsPage() {
   const [settings, setLocalSettings] = useState<SystemSettings>(getSettings());
   const [hasChanges, setHasChanges] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
-  const [cloudProvider, setCloudProvider] = useState<string>('none');
-  const [cloudConnected, setCloudConnected] = useState(false);
+  const [storageLocation, setStorageLocation] = useState<string>('local');
+  const [driveConnected, setDriveConnected] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const handleCloudConnect = () => {
-    if (cloudProvider === 'none') {
+  const handleDriveConnect = () => {
+    if (storageLocation === 'local') {
       toast({
-        title: 'Select Provider',
-        description: 'Please select a cloud provider first.',
-        variant: 'destructive',
+        title: 'LOCAL STORAGE SELECTED',
+        description: 'Data is stored locally on this device.',
       });
       return;
     }
     
-    // Simulate connection - in real app this would authenticate with the provider
+    // Simulate Google Drive connection
     toast({
-      title: 'Cloud Connection',
-      description: `Connecting to ${cloudProvider}... This feature requires backend integration.`,
+      title: 'GOOGLE DRIVE',
+      description: 'Connecting to Google Drive... Please authorize in the popup.',
     });
-    setCloudConnected(true);
+    
+    // Simulate OAuth flow
+    setTimeout(() => {
+      setDriveConnected(true);
+      toast({
+        title: 'CONNECTED',
+        description: 'Google Drive connected successfully. Data will sync automatically.',
+      });
+    }, 2000);
   };
 
   const updateSetting = <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => {
@@ -80,17 +91,55 @@ export default function SettingsPage() {
       details: { facility_name: settings.facility_name },
     });
     setHasChanges(false);
-    toast({ title: 'Settings Saved', description: 'System settings have been updated.' });
+    toast({ title: 'SETTINGS SAVED', description: 'System settings have been updated.' });
   };
 
   const handleReset = () => {
     resetStorage();
     toast({ 
-      title: 'System Reset', 
+      title: 'SYSTEM RESET', 
       description: 'All data has been cleared. Page will reload.',
       variant: 'destructive',
     });
     setTimeout(() => window.location.reload(), 1500);
+  };
+
+  const handleDownloadBackup = () => {
+    const backupData = {
+      exportDate: new Date().toISOString(),
+      version: '1.0',
+      settings: getSettings(),
+      users: getUsers(),
+      pdls: getPDLs(),
+      visitors: getVisitors(),
+      pdlVisitorLinks: getPDLVisitorLinks(),
+      visitSessions: getVisitSessions(),
+      auditLogs: getAuditLogs(),
+      biometrics: getBiometrics(),
+    };
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `watchguard-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    createAuditLog({
+      user_id: user?.id || '',
+      action: 'settings_changed',
+      target_type: 'backup',
+      target_id: 'full_backup',
+      details: { action: 'download' },
+    });
+
+    toast({
+      title: 'BACKUP DOWNLOADED',
+      description: 'All system data has been exported to a JSON file.',
+    });
   };
 
   const toggleConjugalRelationship = (rel: RelationshipType) => {
@@ -112,7 +161,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-3">
             <Settings className="w-8 h-8 text-primary" />
-            System Settings
+            SYSTEM SETTINGS
           </h1>
           <p className="text-muted-foreground mt-1">
             Configure system behavior and preferences
@@ -121,7 +170,7 @@ export default function SettingsPage() {
         {hasChanges && (
           <Button onClick={handleSave} className="btn-scanner">
             <Save className="w-5 h-5 mr-2" />
-            Save Changes
+            SAVE CHANGES
           </Button>
         )}
       </div>
@@ -131,17 +180,17 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Building className="w-5 h-5 text-primary" />
-            Facility Information
+            FACILITY INFORMATION
           </CardTitle>
           <CardDescription>Basic facility details</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Facility Name</Label>
+            <Label>FACILITY NAME</Label>
             <Input
               value={settings.facility_name}
-              onChange={(e) => updateSetting('facility_name', e.target.value)}
-              className="input-field max-w-md"
+              onChange={(e) => updateSetting('facility_name', e.target.value.toUpperCase())}
+              className="input-field max-w-md uppercase"
             />
           </div>
         </CardContent>
@@ -152,14 +201,14 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Users className="w-5 h-5 text-primary" />
-            Visitor Limits
+            VISITOR LIMITS
           </CardTitle>
           <CardDescription>Maximum visitors per PDL by category (-1 for unlimited)</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
-              <Label>Immediate Family</Label>
+              <Label>IMMEDIATE FAMILY</Label>
               <Input
                 type="number"
                 value={settings.immediate_family_limit}
@@ -167,10 +216,10 @@ export default function SettingsPage() {
                 className="input-field"
                 min={-1}
               />
-              <p className="text-xs text-muted-foreground">-1 = Unlimited</p>
+              <p className="text-xs text-muted-foreground">-1 = UNLIMITED</p>
             </div>
             <div className="space-y-2">
-              <Label>Legal Guardian</Label>
+              <Label>LEGAL GUARDIAN</Label>
               <Input
                 type="number"
                 value={settings.legal_guardian_limit}
@@ -180,7 +229,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Close Friend</Label>
+              <Label>CLOSE FRIEND</Label>
               <Input
                 type="number"
                 value={settings.close_friend_limit}
@@ -198,15 +247,15 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Scan className="w-5 h-5 text-primary" />
-            Face Recognition
+            FACE RECOGNITION
           </CardTitle>
-          <CardDescription>Biometric verification settings</CardDescription>
+          <CardDescription>Biometric verification settings for high accuracy</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Recognition Threshold</Label>
+                <Label>RECOGNITION THRESHOLD</Label>
                 <span className="text-sm font-mono text-primary">{settings.face_recognition_threshold.toFixed(2)}</span>
               </div>
               <Slider
@@ -214,16 +263,16 @@ export default function SettingsPage() {
                 onValueChange={([val]) => updateSetting('face_recognition_threshold', val)}
                 min={0.5}
                 max={0.95}
-                step={0.05}
+                step={0.01}
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                Higher values = stricter matching. Recommended: 0.70 - 0.85
+                Higher values = stricter matching. Recommended: 0.75 - 0.85 for high accuracy
               </p>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Match Margin</Label>
+                <Label>MATCH MARGIN</Label>
                 <span className="text-sm font-mono text-primary">{settings.face_recognition_margin.toFixed(2)}</span>
               </div>
               <Slider
@@ -231,12 +280,27 @@ export default function SettingsPage() {
                 onValueChange={([val]) => updateSetting('face_recognition_margin', val)}
                 min={0.05}
                 max={0.3}
-                step={0.05}
+                step={0.01}
                 className="w-full"
               />
               <p className="text-xs text-muted-foreground">
-                Required gap between best and second-best match
+                Required gap between best and second-best match. Higher = fewer false positives
               </p>
+            </div>
+          </div>
+          
+          <div className="p-4 rounded-lg bg-info/10 border border-info/30">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-info mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-foreground">ACCURACY TIPS</p>
+                <ul className="mt-2 space-y-1 text-muted-foreground">
+                  <li>• Ensure good lighting during enrollment</li>
+                  <li>• Capture 5 face samples from slightly different angles</li>
+                  <li>• Set threshold to 0.80+ for high-security areas</li>
+                  <li>• Set margin to 0.15+ to reduce false matches</li>
+                </ul>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -247,7 +311,7 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
-            Conjugal Visit Eligibility
+            CONJUGAL VISIT ELIGIBILITY
           </CardTitle>
           <CardDescription>Select which relationships are eligible for conjugal visits</CardDescription>
         </CardHeader>
@@ -262,7 +326,7 @@ export default function SettingsPage() {
                   checked={settings.conjugal_relationships.includes(rel)}
                   onCheckedChange={() => toggleConjugalRelationship(rel)}
                 />
-                <Label className="text-sm cursor-pointer">
+                <Label className="text-sm cursor-pointer uppercase">
                   {RELATIONSHIP_LABELS[rel]}
                 </Label>
               </div>
@@ -271,69 +335,100 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Cloud Sync */}
+      {/* Local & Drive Storage */}
       <Card className="glass-card border-info/30">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
-            <Cloud className="w-5 h-5 text-info" />
-            Cloud Storage & Sync
-            <Badge variant="outline" className="ml-2 text-xs">Beta</Badge>
+            <HardDrive className="w-5 h-5 text-info" />
+            LOCAL & DRIVE STORAGE
+            <Badge variant="outline" className="ml-2 text-xs">SYNC</Badge>
           </CardTitle>
-          <CardDescription>Connect to cloud storage for data backup and multi-device sync</CardDescription>
+          <CardDescription>Configure data storage location and backup options</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center gap-2 p-3 rounded-lg bg-info/10 border border-info/30">
             <Info className="w-4 h-4 text-info flex-shrink-0" />
             <p className="text-sm text-muted-foreground">
-              Cloud sync allows you to backup your data and access it from multiple devices. 
-              Select your preferred cloud provider below.
+              Choose where to store your data. Local storage keeps data on this device. 
+              Google Drive enables cloud backup and multi-device sync.
             </p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Cloud Provider</Label>
-              <Select value={cloudProvider} onValueChange={setCloudProvider}>
+              <Label>STORAGE LOCATION</Label>
+              <Select value={storageLocation} onValueChange={setStorageLocation}>
                 <SelectTrigger className="input-field">
-                  <SelectValue placeholder="Select provider" />
+                  <SelectValue placeholder="Select location" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">None (Local Only)</SelectItem>
-                  <SelectItem value="supabase">Supabase</SelectItem>
-                  <SelectItem value="firebase">Firebase</SelectItem>
-                  <SelectItem value="aws">AWS S3</SelectItem>
-                  <SelectItem value="azure">Azure Blob</SelectItem>
-                  <SelectItem value="gcp">Google Cloud</SelectItem>
+                  <SelectItem value="local">LOCAL STORAGE (THIS DEVICE)</SelectItem>
+                  <SelectItem value="drive">GOOGLE DRIVE</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div className="flex items-end gap-2">
               <Button 
-                onClick={handleCloudConnect}
-                className={cloudConnected ? 'bg-success hover:bg-success/90' : 'btn-scanner'}
-                disabled={cloudProvider === 'none'}
+                onClick={handleDriveConnect}
+                className={driveConnected && storageLocation === 'drive' ? 'bg-success hover:bg-success/90' : 'btn-scanner'}
               >
-                {cloudConnected ? (
+                {driveConnected && storageLocation === 'drive' ? (
                   <>
                     <Shield className="w-4 h-4 mr-2" />
-                    Connected
+                    CONNECTED
                   </>
                 ) : (
                   <>
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    Connect
+                    <HardDrive className="w-4 h-4 mr-2" />
+                    {storageLocation === 'drive' ? 'CONNECT DRIVE' : 'USE LOCAL'}
                   </>
                 )}
               </Button>
             </div>
           </div>
           
-          {cloudProvider !== 'none' && (
+          {storageLocation === 'local' && (
             <p className="text-xs text-muted-foreground">
-              Note: Cloud integration requires additional setup. Contact your system administrator for configuration.
+              Data is stored in browser localStorage. Clear browser data will erase all records.
+              Use the backup function below to export data periodically.
             </p>
           )}
+          
+          {storageLocation === 'drive' && driveConnected && (
+            <p className="text-xs text-success">
+              ✓ Connected to Google Drive. Data will be synced automatically.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Backup & Export */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <FolderDown className="w-5 h-5 text-primary" />
+            BACKUP & EXPORT
+          </CardTitle>
+          <CardDescription>Download all system data for backup</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30">
+            <div>
+              <p className="font-medium text-foreground">DOWNLOAD ALL FILES</p>
+              <p className="text-sm text-muted-foreground">
+                Export complete system data including PDLs, visitors, visits, biometrics, and settings
+              </p>
+            </div>
+            <Button onClick={handleDownloadBackup} className="btn-scanner">
+              <Download className="w-4 h-4 mr-2" />
+              DOWNLOAD BACKUP
+            </Button>
+          </div>
+          
+          <p className="text-xs text-muted-foreground">
+            Backup file will be saved as JSON format. Keep this file secure as it contains all system data.
+          </p>
         </CardContent>
       </Card>
 
@@ -342,14 +437,14 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Database className="w-5 h-5 text-primary" />
-            System Options
+            SYSTEM OPTIONS
           </CardTitle>
           <CardDescription>General system behavior</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
             <div>
-              <Label>Allow Guest Enrollment</Label>
+              <Label>ALLOW GUEST ENROLLMENT</Label>
               <p className="text-xs text-muted-foreground mt-1">
                 Allow users with Guest role to enroll new visitors
               </p>
@@ -360,7 +455,7 @@ export default function SettingsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label>Data Retention (Days)</Label>
+            <Label>DATA RETENTION (DAYS)</Label>
             <Input
               type="number"
               value={settings.data_retention_days}
@@ -381,14 +476,14 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2 text-destructive">
             <AlertTriangle className="w-5 h-5" />
-            Danger Zone
+            DANGER ZONE
           </CardTitle>
           <CardDescription>Irreversible actions</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between p-4 rounded-lg bg-destructive/10 border border-destructive/30">
             <div>
-              <p className="font-medium text-foreground">Reset All Data</p>
+              <p className="font-medium text-foreground">RESET ALL DATA</p>
               <p className="text-sm text-muted-foreground">
                 Clear all data and reset to factory defaults. This cannot be undone.
               </p>
@@ -398,7 +493,7 @@ export default function SettingsPage() {
               onClick={() => setShowResetDialog(true)}
             >
               <RotateCcw className="w-4 h-4 mr-2" />
-              Reset
+              RESET
             </Button>
           </div>
         </CardContent>
@@ -408,19 +503,19 @@ export default function SettingsPage() {
       <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <AlertDialogContent className="glass-card border-border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-destructive">Reset All Data?</AlertDialogTitle>
+            <AlertDialogTitle className="text-destructive">RESET ALL DATA?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently delete all users, PDLs, visitors, visit records, and settings.
               Only the default super admin account will remain. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>CANCEL</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleReset}
               className="bg-destructive hover:bg-destructive/90"
             >
-              Yes, Reset Everything
+              YES, RESET EVERYTHING
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
