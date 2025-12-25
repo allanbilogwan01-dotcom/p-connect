@@ -35,7 +35,7 @@ import { RELATIONSHIP_LABELS } from '@/types';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useCameraContext } from '@/hooks/useCameraContext';
 import { useAudioFeedback } from '@/hooks/useAudioFeedback';
-
+import { CameraPreview } from '@/components/CameraPreview';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
@@ -604,6 +604,11 @@ export default function VisitationPage() {
                         <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-2" />
                         <p className="text-sm text-muted-foreground">Loading face detection...</p>
                       </div>
+                    )}
+                    
+                    {/* Camera Preview Toggle - only show when not actively scanning */}
+                    {!faceLoading && !faceScanning && (
+                      <CameraPreview />
                     )}
                     
                     {!faceLoading && faceScanning ? (
