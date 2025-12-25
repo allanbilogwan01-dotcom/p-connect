@@ -33,6 +33,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import { useCameraDevices } from '@/components/CameraSelector';
+import { useCameraContext } from '@/hooks/useCameraContext';
 import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
@@ -61,6 +62,7 @@ export default function VisitationPage() {
 
   const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
+  const { setActive: setCameraActive } = useCameraContext();
 
   useEffect(() => {
     loadModels();
@@ -113,6 +115,9 @@ export default function VisitationPage() {
         },
         () => {}
       );
+      
+      // Camera is now active - update favicon indicator
+      setCameraActive(true);
     } catch (error: any) {
       console.error('QR Scanner error:', error);
       setScannerActive(false);
@@ -136,7 +141,7 @@ export default function VisitationPage() {
     }
   };
 
-  const stopQRScanner = () => {
+  const stopQRScanner = useCallback(() => {
     const scanner = scannerRef.current;
     scannerRef.current = null;
 
@@ -145,10 +150,13 @@ export default function VisitationPage() {
         .stop()
         .then(() => scanner.clear())
         .catch(() => {});
+      
+      // Camera is no longer active
+      setCameraActive(false);
     }
 
     setScannerActive(false);
-  };
+  }, [setCameraActive]);
 
   const startFaceScanner = useCallback(async () => {
     if (!isLoaded) {
@@ -164,6 +172,7 @@ export default function VisitationPage() {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
+        setCameraActive(false);
       }
 
       // Mount the <video> element first, then attach the stream
@@ -188,6 +197,9 @@ export default function VisitationPage() {
       video.muted = true;
 
       await video.play();
+      
+      // Camera is now active - update favicon indicator
+      setCameraActive(true);
 
       setFaceMessage('Scanning face...');
     } catch (err: any) {
@@ -217,15 +229,16 @@ export default function VisitationPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDeviceId, toast]);
+  }, [isLoaded, selectedDeviceId, toast, setCameraActive]);
 
   const stopFaceScanner = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
+      setCameraActive(false);
     }
     setFaceScanning(false);
-  }, []);
+  }, [setCameraActive]);
 
   const runFaceDetection = useCallback(async () => {
     if (!videoRef.current || !isLoaded || !faceScanning) return;
