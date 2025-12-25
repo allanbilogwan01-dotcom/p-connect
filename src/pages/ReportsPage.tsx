@@ -116,13 +116,13 @@ export default function ReportsPage() {
         csvContent += `${new Date(visitor.created_at).toLocaleDateString()}\n`;
       });
     } else if (reportType === 'pdl') {
-      csvContent = 'PDL Code,Name,Gender,Cell,Crime,Status,Date of Commit\n';
+      csvContent = 'PDL Code,Name,Gender,Case Number,Crimes,Status,Date of Commit\n';
       pdls.forEach(pdl => {
         csvContent += `${pdl.pdl_code},`;
         csvContent += `"${pdl.first_name} ${pdl.last_name}",`;
         csvContent += `${pdl.gender},`;
-        csvContent += `${pdl.cell_block}-${pdl.cell_number},`;
-        csvContent += `"${pdl.crime || 'N/A'}",`;
+        csvContent += `"${pdl.case_number || 'N/A'}",`;
+        csvContent += `"${pdl.crimes?.join('; ') || 'N/A'}",`;
         csvContent += `${pdl.status},`;
         csvContent += `${new Date(pdl.date_of_commit).toLocaleDateString()}\n`;
       });
@@ -394,7 +394,7 @@ export default function ReportsPage() {
                     <th>PDL Code</th>
                     <th>Name</th>
                     <th>Gender</th>
-                    <th>Cell</th>
+                    <th>Case No.</th>
                     <th>Status</th>
                     <th>Date of Commit</th>
                   </tr>
@@ -405,11 +405,12 @@ export default function ReportsPage() {
                       <td className="font-mono text-primary">{pdl.pdl_code}</td>
                       <td>{pdl.first_name} {pdl.last_name}</td>
                       <td className="capitalize">{pdl.gender}</td>
-                      <td>{pdl.cell_block}-{pdl.cell_number}</td>
+                      <td>{pdl.case_number || 'N/A'}</td>
                       <td>
                         <Badge className={
                           pdl.status === 'detained' ? 'status-detained' :
-                          pdl.status === 'released' ? 'status-released' : 'status-pending'
+                          pdl.status === 'released' ? 'status-released' :
+                          pdl.status === 'deceased' ? 'status-blacklisted' : 'status-pending'
                         }>
                           {pdl.status}
                         </Badge>
