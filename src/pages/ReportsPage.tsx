@@ -116,13 +116,13 @@ export default function ReportsPage() {
         csvContent += `${new Date(visitor.created_at).toLocaleDateString()}\n`;
       });
     } else if (reportType === 'pdl') {
-      csvContent = 'PDL Code,Name,Gender,Case Number,Crimes,Status,Date of Commit\n';
+      csvContent = 'PDL Code,Name,Gender,Crimes/Cases,Status,Date of Commit\n';
       pdls.forEach(pdl => {
+        const crimesStr = pdl.crimes?.map(c => `${c.offense} (${c.case_number})`).join('; ') || 'N/A';
         csvContent += `${pdl.pdl_code},`;
         csvContent += `"${pdl.first_name} ${pdl.last_name}",`;
         csvContent += `${pdl.gender},`;
-        csvContent += `"${pdl.case_number || 'N/A'}",`;
-        csvContent += `"${pdl.crimes?.join('; ') || 'N/A'}",`;
+        csvContent += `"${crimesStr}",`;
         csvContent += `${pdl.status},`;
         csvContent += `${new Date(pdl.date_of_commit).toLocaleDateString()}\n`;
       });
@@ -405,7 +405,7 @@ export default function ReportsPage() {
                       <td className="font-mono text-primary">{pdl.pdl_code}</td>
                       <td>{pdl.first_name} {pdl.last_name}</td>
                       <td className="capitalize">{pdl.gender}</td>
-                      <td>{pdl.case_number || 'N/A'}</td>
+                      <td>{pdl.crimes?.length || 0} case(s)</td>
                       <td>
                         <Badge className={
                           pdl.status === 'detained' ? 'status-detained' :

@@ -16,6 +16,11 @@ export interface User {
 
 export type PDLStatus = 'detained' | 'released' | 'transferred' | 'deceased';
 
+export interface CrimeEntry {
+  offense: string;
+  case_number: string;
+}
+
 export interface PDL {
   id: string;
   pdl_code: string;
@@ -27,8 +32,7 @@ export interface PDL {
   gender: 'male' | 'female';
   date_of_commit: string;
   photo_url?: string;
-  crimes: string[];
-  case_number?: string;
+  crimes: CrimeEntry[];
   status: PDLStatus;
   created_at: string;
   updated_at: string;
