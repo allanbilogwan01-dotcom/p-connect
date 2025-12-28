@@ -6,15 +6,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Palette, Crown, Shield, Moon, Sun } from 'lucide-react';
+import { Palette, Crown, Shield, Moon } from 'lucide-react';
 
 const themeIcons: Record<ThemeType, React.ReactNode> = {
   'dark': <Moon className="h-4 w-4" />,
-  'royal-dark': <Crown className="h-4 w-4" />,
-  'royal-gold': <Crown className="h-4 w-4 text-yellow-500" />,
-  'royal-purple': <Crown className="h-4 w-4 text-purple-500" />,
-  'royal-silver': <Crown className="h-4 w-4 text-slate-400" />,
-  'government-blue': <Shield className="h-4 w-4 text-blue-600" />,
+  'light': <Shield className="h-4 w-4 text-blue-600" />,
+  'royal': <Crown className="h-4 w-4 text-amber-500" />,
 };
 
 export function ThemeSwitcher() {

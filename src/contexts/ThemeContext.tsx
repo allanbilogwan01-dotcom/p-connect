@@ -1,12 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-export type ThemeType = 
-  | 'dark' 
-  | 'royal-dark' 
-  | 'royal-gold' 
-  | 'royal-purple' 
-  | 'royal-silver' 
-  | 'government-blue';
+export type ThemeType = 'dark' | 'light' | 'royal';
 
 interface ThemeContextType {
   theme: ThemeType;
@@ -16,11 +10,8 @@ interface ThemeContextType {
 
 const themes: { value: ThemeType; label: string; description: string }[] = [
   { value: 'dark', label: 'Dark', description: 'Default dark theme' },
-  { value: 'royal-dark', label: 'Royal Dark', description: 'Elegant dark with royal accents' },
-  { value: 'royal-gold', label: 'Royal Gold', description: 'Luxurious gold theme' },
-  { value: 'royal-purple', label: 'Royal Purple', description: 'Majestic purple theme' },
-  { value: 'royal-silver', label: 'Royal Silver', description: 'Refined silver theme' },
-  { value: 'government-blue', label: 'Government Blue', description: 'Official light theme' },
+  { value: 'light', label: 'Government', description: 'Official light theme with blue accents' },
+  { value: 'royal', label: 'Royal', description: 'Premium dark with gold, purple & silver accents' },
 ];
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -53,7 +44,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.classList.add(theme);
     
     // Handle light/dark mode for system
-    if (theme === 'government-blue') {
+    if (theme === 'light') {
       root.classList.remove('dark');
       root.classList.add('light');
     } else {
