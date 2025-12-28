@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Clock, Camera, QrCode, Search, LogIn, LogOut,
-  User, AlertCircle, Check, X, Scan, Loader2
+  User, AlertCircle, Check, X, Scan, Loader2, Radio
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,32 +28,30 @@ import {
   getVisitorByCode, getVisitors, getPDLs, getPDLVisitorLinks,
   getOpenSession, createVisitSession, updateVisitSession,
   getActiveSessions, getCompletedTodaySessions, createAuditLog,
-  getSettings, getBiometrics, getVisitorById
+  getSettings
 } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useCameraContext } from '@/hooks/useCameraContext';
 import { useAudioFeedback } from '@/hooks/useAudioFeedback';
-import type { Visitor, PDLVisitorLink, VisitType, TimeMethod } from '@/types';
+import { useHardwareScanner } from '@/hooks/useHardwareScanner';
+import { ModernFaceScanner } from '@/components/ModernFaceScanner';
+import type { Visitor, PDLVisitorLink, VisitType } from '@/types';
 import { Html5Qrcode } from 'html5-qrcode';
-import { useFaceDetection, arrayToDescriptor } from '@/hooks/useFaceDetection';
 
 export default function VisitationPage() {
   const [activeTab, setActiveTab] = useState('time-in');
   const [idMethod, setIdMethod] = useState<'manual' | 'qr' | 'face'>('manual');
   const [scannerActive, setScannerActive] = useState(false);
-  const [faceScanning, setFaceScanning] = useState(false);
+  const [showFaceScanner, setShowFaceScanner] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [foundVisitor, setFoundVisitor] = useState<Visitor | null>(null);
   const [selectedLink, setSelectedLink] = useState<PDLVisitorLink | null>(null);
   const [visitType, setVisitType] = useState<VisitType>('regular');
   const [activeSessions, setActiveSessions] = useState(getActiveSessions());
   const [completedSessions, setCompletedSessions] = useState(getCompletedTodaySessions());
-  const [faceMessage, setFaceMessage] = useState('Position face in frame');
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   const pdls = getPDLs();
@@ -61,14 +59,27 @@ export default function VisitationPage() {
   const links = getPDLVisitorLinks();
   const settings = getSettings();
 
-  const { isLoaded, isLoading: faceLoading, loadModels, detectFace, getMatchScore } = useFaceDetection();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
   const { setActive: setCameraActive } = useCameraContext();
   const { playQRSuccessBeep, playFaceMatchBeep, playErrorBeep } = useAudioFeedback();
 
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+  // Hardware barcode scanner integration
+  const handleHardwareScan = useCallback((code: string) => {
+    playQRSuccessBeep();
+    handleCodeScanned(code, 'qr_scan');
+    toast({
+      title: 'HARDWARE SCAN DETECTED',
+      description: `Scanned code: ${code}`,
+    });
+  }, [playQRSuccessBeep, toast]);
+
+  const { isListening } = useHardwareScanner({
+    onScan: handleHardwareScan,
+    enabled: idMethod === 'manual' || idMethod === 'qr',
+    minLength: 10,
+    maxLength: 10,
+    timeout: 100,
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -80,7 +91,6 @@ export default function VisitationPage() {
 
   const startQRScanner = async () => {
     try {
-      // Stop any existing scanner
       if (scannerRef.current) {
         try {
           await scannerRef.current.stop();
@@ -90,18 +100,15 @@ export default function VisitationPage() {
         scannerRef.current = null;
       }
 
-      // Request camera permission (then immediately release it)
       const permStream = await navigator.mediaDevices.getUserMedia({ video: true });
       permStream.getTracks().forEach((t) => t.stop());
 
-      // Render the target element before initializing Html5Qrcode
       setScannerActive(true);
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
       const scanner = new Html5Qrcode('qr-reader');
       scannerRef.current = scanner;
 
-      // html5-qrcode expects a deviceId string OR { facingMode }
       const cameraIdOrConfig = selectedDeviceId || { facingMode: 'environment' as const };
 
       await scanner.start(
@@ -112,14 +119,13 @@ export default function VisitationPage() {
           aspectRatio: 1.0,
         },
         (decodedText) => {
-          playQRSuccessBeep(); // Play success beep on QR scan
+          playQRSuccessBeep();
           handleCodeScanned(decodedText, 'qr_scan');
           stopQRScanner();
         },
         () => {}
       );
       
-      // Camera is now active - update favicon indicator
       setCameraActive(true);
     } catch (error: any) {
       console.error('QR Scanner error:', error);
@@ -154,180 +160,46 @@ export default function VisitationPage() {
         .then(() => scanner.clear())
         .catch(() => {});
       
-      // Camera is no longer active
       setCameraActive(false);
     }
 
     setScannerActive(false);
   }, [setCameraActive]);
 
-  const startFaceScanner = useCallback(async () => {
-    if (!isLoaded) {
-      toast({
-        title: 'Loading',
-        description: 'Face detection models are still loading...',
-      });
-      return;
-    }
-
-    try {
-      // Stop any existing stream first
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        setCameraActive(false);
-      }
-
-      // Mount the <video> element first, then attach the stream
-      setFaceMessage('Starting camera...');
-      setFaceScanning(true);
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
-      const constraints: MediaStreamConstraints = {
-        video: selectedDeviceId
-          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
-          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-
-      const video = videoRef.current;
-      if (!video) throw new Error('Video element not ready');
-
-      video.srcObject = stream;
-      video.setAttribute('playsinline', 'true');
-      video.muted = true;
-
-      await video.play();
-      
-      // Camera is now active - update favicon indicator
-      setCameraActive(true);
-
-      setFaceMessage('Scanning face...');
-    } catch (err: any) {
-      console.error('Face scanner error:', err);
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-      setFaceScanning(false);
-      setFaceMessage('Position face in frame');
-
-      let message = 'Unable to access camera for face scanning.';
-      if (err?.name === 'NotAllowedError') {
-        message = 'Camera permission denied. Please allow camera access.';
-      } else if (err?.name === 'NotFoundError') {
-        message = 'No camera found on this device.';
-      } else if (err?.name === 'NotReadableError') {
-        message = 'Camera is in use by another application.';
-      } else if (typeof err?.message === 'string' && err.message.trim()) {
-        message = `Unable to start face scan: ${err.message}`;
-      }
-
-      toast({
-        title: 'Camera Error',
-        description: message,
-        variant: 'destructive',
-      });
-    }
-  }, [isLoaded, selectedDeviceId, toast, setCameraActive]);
-
-  const stopFaceScanner = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-      setCameraActive(false);
-    }
-    setFaceScanning(false);
-  }, [setCameraActive]);
-
-  const runFaceDetection = useCallback(async () => {
-    if (!videoRef.current || !isLoaded || !faceScanning) return;
-
-    const detection = await detectFace(videoRef.current);
+  const handleFaceMatch = useCallback((visitor: Visitor, confidence: number) => {
+    playFaceMatchBeep();
+    setFoundVisitor(visitor);
+    setShowFaceScanner(false);
     
-    if (detection) {
-      const biometrics = getBiometrics();
-      let bestMatch: { visitorId: string; score: number } | null = null;
-      let secondBest = 0;
-      
-      for (const bio of biometrics) {
-        for (const storedEmb of bio.embeddings) {
-          const storedDescriptor = arrayToDescriptor(storedEmb);
-          const distance = Math.sqrt(
-            detection.descriptor.reduce((sum, val, i) => 
-              sum + Math.pow(val - storedDescriptor[i], 2), 0
-            )
-          );
-          const score = getMatchScore(distance);
-          
-          if (!bestMatch || score > bestMatch.score) {
-            secondBest = bestMatch?.score || 0;
-            bestMatch = { visitorId: bio.visitor_id, score };
-          } else if (score > secondBest) {
-            secondBest = score;
-          }
-        }
-      }
-      
-        if (bestMatch && 
-          bestMatch.score >= settings.face_recognition_threshold &&
-          (bestMatch.score - secondBest) >= settings.face_recognition_margin) {
-        const visitor = getVisitorById(bestMatch.visitorId);
-        if (visitor && visitor.status === 'active') {
-          playFaceMatchBeep(); // Play success beep on face match
-          stopFaceScanner();
-          setFoundVisitor(visitor);
-          
-          const openSession = getOpenSession(visitor.id);
-          if (openSession) {
-            setActiveTab('time-out');
-            setSelectedLink(links.find(l => l.id === openSession.pdl_visitor_link_id) || null);
-          } else {
-            const approvedLinks = links.filter(l => 
-              l.visitor_id === visitor.id && l.approval_status === 'approved'
-            );
-            if (approvedLinks.length === 1) {
-              setSelectedLink(approvedLinks[0]);
-            }
-          }
-          
-          toast({
-            title: 'Face Matched!',
-            description: `${visitor.first_name} ${visitor.last_name} (${Math.round(bestMatch.score * 100)}% confidence)`,
-          });
-          return;
-        }
-      }
-      
-      setFaceMessage('Face detected, searching...');
+    const openSession = getOpenSession(visitor.id);
+    if (openSession) {
+      setActiveTab('time-out');
+      setSelectedLink(links.find(l => l.id === openSession.pdl_visitor_link_id) || null);
     } else {
-      setFaceMessage('Position face in frame');
+      const approvedLinks = links.filter(l => 
+        l.visitor_id === visitor.id && l.approval_status === 'approved'
+      );
+      if (approvedLinks.length === 1) {
+        setSelectedLink(approvedLinks[0]);
+      }
     }
-
-    if (faceScanning) {
-      setTimeout(runFaceDetection, 200);
-    }
-  }, [isLoaded, faceScanning, detectFace, getMatchScore, settings, stopFaceScanner, links, toast]);
-
-  useEffect(() => {
-    if (faceScanning && isLoaded) {
-      runFaceDetection();
-    }
-  }, [faceScanning, isLoaded, runFaceDetection]);
+    
+    toast({
+      title: 'FACE MATCHED!',
+      description: `${visitor.first_name} ${visitor.last_name} (${Math.round(confidence * 100)}% confidence)`,
+    });
+  }, [links, toast, playFaceMatchBeep]);
 
   useEffect(() => {
     return () => {
-      stopFaceScanner();
       stopQRScanner();
     };
-  }, [stopFaceScanner]);
+  }, [stopQRScanner]);
 
-  const handleCodeScanned = (code: string, method: TimeMethod) => {
+  const handleCodeScanned = (code: string, method: 'qr_scan' | 'manual_id') => {
     const visitor = getVisitorByCode(code);
     if (!visitor) {
+      playErrorBeep();
       toast({
         title: 'Visitor Not Found',
         description: `No visitor found with code: ${code}`,
@@ -337,6 +209,7 @@ export default function VisitationPage() {
     }
 
     if (visitor.status !== 'active') {
+      playErrorBeep();
       toast({
         title: 'Visitor Inactive',
         description: 'This visitor is not active and cannot visit.',
@@ -499,7 +372,14 @@ export default function VisitationPage() {
             Process visitor time-in and time-out
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Hardware Scanner Indicator */}
+          {isListening && (
+            <Badge className="status-active text-sm px-3 py-1.5 flex items-center gap-2">
+              <Radio className="w-3 h-3 animate-pulse" />
+              HARDWARE SCANNER READY
+            </Badge>
+          )}
           <Badge className="status-active text-sm px-4 py-2 uppercase">
             <Clock className="w-4 h-4 mr-2" />
             {activeSessions.length} ACTIVE SESSION{activeSessions.length !== 1 ? 'S' : ''}
@@ -533,27 +413,43 @@ export default function VisitationPage() {
                 </TabsList>
                 
                 <TabsContent value="manual" className="mt-4">
-                  <div className="flex gap-2">
-                    <Input
-                      value={manualCode}
-                      onChange={(e) => setManualCode(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      placeholder="Enter 10-digit visitor code"
-                      className="input-field font-mono text-lg"
-                      maxLength={10}
-                      onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                    />
-                    <Button 
-                      onClick={handleManualSearch}
-                      className="btn-scanner"
-                      disabled={manualCode.length !== 10}
-                    >
-                      <Search className="w-5 h-5" />
-                    </Button>
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
+                        value={manualCode}
+                        onChange={(e) => setManualCode(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        placeholder="Enter 10-digit visitor code"
+                        className="input-field font-mono text-lg"
+                        maxLength={10}
+                        onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
+                      />
+                      <Button 
+                        onClick={handleManualSearch}
+                        className="btn-scanner"
+                        disabled={manualCode.length !== 10}
+                      >
+                        <Search className="w-5 h-5" />
+                      </Button>
+                    </div>
+                    {isListening && (
+                      <p className="text-sm text-muted-foreground flex items-center gap-2">
+                        <Radio className="w-3 h-3 text-success animate-pulse" />
+                        Hardware barcode/QR scanner is active - scan a visitor code
+                      </p>
+                    )}
                   </div>
                 </TabsContent>
                 
                 <TabsContent value="qr" className="mt-4">
                   <div className="space-y-4">
+                    {/* Hardware scanner hint */}
+                    {isListening && (
+                      <div className="p-3 rounded-lg bg-success/10 border border-success/30 text-sm flex items-center gap-2">
+                        <Radio className="w-4 h-4 text-success animate-pulse" />
+                        <span>Hardware barcode/QR scanner detected - scan a visitor code directly</span>
+                      </div>
+                    )}
+                    
                     {/* Camera Selector for QR */}
                     {devices.length > 1 && !scannerActive && (
                       <div className="flex justify-center">
@@ -590,7 +486,7 @@ export default function VisitationPage() {
                         className="w-full btn-scanner h-24 text-lg"
                       >
                         <QrCode className="w-8 h-8 mr-3" />
-                        START QR SCANNER
+                        START CAMERA QR SCANNER
                       </Button>
                     )}
                   </div>
@@ -598,69 +494,15 @@ export default function VisitationPage() {
 
                 <TabsContent value="face" className="mt-4">
                   <div className="space-y-4">
-                    {faceLoading && (
-                      <div className="text-center py-8">
-                        <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary mb-2" />
-                        <p className="text-sm text-muted-foreground">Loading face detection...</p>
-                      </div>
-                    )}
-                    
-                    {/* Camera selector for face scan */}
-                    {devices.length > 1 && !faceScanning && (
-                      <div className="flex justify-center">
-                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                          <SelectTrigger className="w-64 h-9 text-sm">
-                            <Camera className="w-4 h-4 mr-2" />
-                            <SelectValue placeholder="Select camera" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {devices.map((device, idx) => (
-                              <SelectItem key={device.deviceId} value={device.deviceId}>
-                                {device.label || `Camera ${idx + 1}`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    
-                    {!faceLoading && faceScanning ? (
-                      <div className="space-y-4">
-                        <div className="relative w-full max-w-sm mx-auto aspect-square rounded-2xl overflow-hidden bg-muted border-2 border-primary/50">
-                          <video
-                            ref={videoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="w-full h-full object-cover"
-                            style={{ transform: 'scaleX(-1)' }}
-                          />
-                          {/* Scan overlay */}
-                          <div className="absolute inset-8 border-2 border-primary/50 rounded-xl pointer-events-none">
-                            <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-primary rounded-tl-lg" />
-                            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-primary rounded-tr-lg" />
-                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-primary rounded-bl-lg" />
-                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary rounded-br-lg" />
-                          </div>
-                          <div className="absolute bottom-4 left-0 right-0 text-center">
-                            <span className="bg-background/80 text-foreground text-sm px-3 py-1 rounded-full">
-                              {faceMessage}
-                            </span>
-                          </div>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          onClick={stopFaceScanner}
-                          className="w-full"
-                        >
-                          STOP SCANNER
-                        </Button>
-                      </div>
-                    ) : !faceLoading && (
+                    {showFaceScanner ? (
+                      <ModernFaceScanner
+                        onMatch={handleFaceMatch}
+                        onCancel={() => setShowFaceScanner(false)}
+                      />
+                    ) : (
                       <Button 
-                        onClick={startFaceScanner}
+                        onClick={() => setShowFaceScanner(true)}
                         className="w-full btn-scanner h-24 text-lg"
-                        disabled={!isLoaded}
                       >
                         <Scan className="w-8 h-8 mr-3" />
                         START FACE SCANNER
