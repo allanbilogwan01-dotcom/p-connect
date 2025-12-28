@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { 
   UserPlus, Search, Camera, QrCode, Check, 
-  Edit, RefreshCw, CreditCard,
-  Download, Scan, Loader2, Plus, Link2, ChevronRight, Upload, FileSpreadsheet, History, Clock
+  Edit, RefreshCw, CreditCard, X, Plus,
+  Download, Scan, Loader2, Link2, ChevronRight, Upload, FileSpreadsheet, History, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,7 +63,8 @@ export default function VisitorEnrollmentPage() {
   const [newVisitorId, setNewVisitorId] = useState<string | null>(null);
   const [skipBiometrics, setSkipBiometrics] = useState(false);
   
-  // PDL Link states
+  // PDL Link states - support multiple links
+  const [pdlLinks, setPdlLinks] = useState<{pdlId: string; relationship: RelationshipType; category: VisitorCategory}[]>([]);
   const [linkPDL, setLinkPDL] = useState('');
   const [linkRelationship, setLinkRelationship] = useState<RelationshipType | ''>('');
   const [linkCategory, setLinkCategory] = useState<VisitorCategory | ''>('');
@@ -297,8 +298,8 @@ export default function VisitorEnrollmentPage() {
     setEnrollmentStep('link');
   };
 
-  const handleCreateLink = () => {
-    if (!newVisitorId || !linkPDL || !linkRelationship || !linkCategory) {
+  const handleAddLink = () => {
+    if (!linkPDL || !linkRelationship || !linkCategory) {
       toast({
         title: 'Missing Fields',
         description: 'Please fill in all required fields.',
@@ -307,42 +308,72 @@ export default function VisitorEnrollmentPage() {
       return;
     }
     
-    // Check existing link
-    const existingLinks = getPDLVisitorLinks();
-    if (existingLinks.some(l => l.pdl_id === linkPDL && l.visitor_id === newVisitorId)) {
+    // Check if already added locally
+    if (pdlLinks.some(l => l.pdlId === linkPDL)) {
       toast({
-        title: 'Link Exists',
-        description: 'This visitor is already linked to this PDL.',
+        title: 'Already Added',
+        description: 'This PDL is already in the list.',
         variant: 'destructive',
       });
       return;
     }
     
-    const newLink = createPDLVisitorLink({
-      pdl_id: linkPDL,
-      visitor_id: newVisitorId,
-      relationship: linkRelationship,
-      category: linkCategory,
-      approval_status: 'pending',
-    });
-    
-    createAuditLog({
-      user_id: user?.id || '',
-      action: 'kin_dalaw_created',
-      target_type: 'pdl_visitor_link',
-      target_id: newLink.id,
-    });
+    setPdlLinks(prev => [...prev, { pdlId: linkPDL, relationship: linkRelationship, category: linkCategory }]);
+    setLinkPDL('');
+    setLinkRelationship('');
+    setLinkCategory('');
     
     toast({
-      title: 'Link Created',
-      description: 'PDL link has been created and is pending approval.',
+      title: 'Link Added',
+      description: 'PDL added to link list. Add more or finish.',
     });
+  };
+
+  const handleRemoveLink = (pdlId: string) => {
+    setPdlLinks(prev => prev.filter(l => l.pdlId !== pdlId));
+  };
+
+  const handleFinishWithLinks = () => {
+    if (!newVisitorId) {
+      resetForm();
+      return;
+    }
+
+    const existingLinks = getPDLVisitorLinks();
+    
+    for (const link of pdlLinks) {
+      if (existingLinks.some(l => l.pdl_id === link.pdlId && l.visitor_id === newVisitorId)) {
+        continue; // Skip if already exists
+      }
+      
+      const newLink = createPDLVisitorLink({
+        pdl_id: link.pdlId,
+        visitor_id: newVisitorId,
+        relationship: link.relationship,
+        category: link.category,
+        approval_status: 'pending',
+      });
+      
+      createAuditLog({
+        user_id: user?.id || '',
+        action: 'kin_dalaw_created',
+        target_type: 'pdl_visitor_link',
+        target_id: newLink.id,
+      });
+    }
+    
+    if (pdlLinks.length > 0) {
+      toast({
+        title: 'Links Created',
+        description: `${pdlLinks.length} PDL link(s) created and pending approval.`,
+      });
+    }
     
     resetForm();
   };
 
   const handleSkipLink = () => {
-    resetForm();
+    handleFinishWithLinks();
   };
 
   const resetForm = () => {
@@ -363,6 +394,7 @@ export default function VisitorEnrollmentPage() {
     setEnrollmentStep('info');
     setNewVisitorId(null);
     setSkipBiometrics(false);
+    setPdlLinks([]);
     setLinkPDL('');
     setLinkRelationship('');
     setLinkCategory('');
@@ -966,21 +998,44 @@ export default function VisitorEnrollmentPage() {
           {enrollmentStep === 'link' && !editingVisitor && (
             <div className="space-y-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold">Link to PDL (Optional)</h3>
+                <h3 className="text-lg font-semibold">Link to PDL(s)</h3>
                 <p className="text-sm text-muted-foreground">
-                  Create a Kin Dalaw link for this visitor
+                  Add one or more PDL links for this visitor
                 </p>
               </div>
+
+              {/* Added Links List */}
+              {pdlLinks.length > 0 && (
+                <div className="space-y-2 max-w-md mx-auto">
+                  <Label className="text-sm">Added Links ({pdlLinks.length})</Label>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {pdlLinks.map(link => {
+                      const pdl = pdls.find(p => p.id === link.pdlId);
+                      return (
+                        <div key={link.pdlId} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                          <div>
+                            <p className="text-sm font-medium">{pdl?.last_name}, {pdl?.first_name}</p>
+                            <p className="text-xs text-muted-foreground">{link.relationship.replace(/_/g, ' ')}</p>
+                          </div>
+                          <Button size="sm" variant="ghost" onClick={() => handleRemoveLink(link.pdlId)}>
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               
               <div className="space-y-4 max-w-md mx-auto">
                 <div className="space-y-2">
-                  <Label>Select PDL *</Label>
+                  <Label>Select PDL</Label>
                   <Select value={linkPDL} onValueChange={setLinkPDL}>
                     <SelectTrigger className="input-field">
                       <SelectValue placeholder="Select a PDL" />
                     </SelectTrigger>
                     <SelectContent>
-                      {pdls.filter(p => p.status === 'detained').map(pdl => (
+                      {pdls.filter(p => p.status === 'detained' && !pdlLinks.some(l => l.pdlId === p.id)).map(pdl => (
                         <SelectItem key={pdl.id} value={pdl.id}>
                           {pdl.last_name}, {pdl.first_name} ({pdl.pdl_code})
                         </SelectItem>
@@ -990,7 +1045,7 @@ export default function VisitorEnrollmentPage() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Relationship *</Label>
+                  <Label>Relationship</Label>
                   <Select value={linkRelationship} onValueChange={(v) => setLinkRelationship(v as RelationshipType)}>
                     <SelectTrigger className="input-field">
                       <SelectValue placeholder="Select relationship" />
@@ -1006,7 +1061,7 @@ export default function VisitorEnrollmentPage() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Category *</Label>
+                  <Label>Category</Label>
                   <Select value={linkCategory} onValueChange={(v) => setLinkCategory(v as VisitorCategory)}>
                     <SelectTrigger className="input-field">
                       <SelectValue placeholder="Select category" />
@@ -1020,19 +1075,26 @@ export default function VisitorEnrollmentPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddLink}
+                  disabled={!linkPDL || !linkRelationship || !linkCategory}
+                  className="w-full"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Another PDL Link
+                </Button>
               </div>
               
               <div className="flex justify-center gap-3">
                 <Button 
-                  onClick={handleCreateLink}
+                  onClick={handleFinishWithLinks}
                   className="btn-scanner"
-                  disabled={!linkPDL || !linkRelationship || !linkCategory}
                 >
-                  <Link2 className="w-4 h-4 mr-2" />
-                  Create Link
-                </Button>
-                <Button variant="outline" onClick={handleSkipLink}>
-                  Skip & Finish
+                  <Check className="w-4 h-4 mr-2" />
+                  {pdlLinks.length > 0 ? `Finish with ${pdlLinks.length} Link(s)` : 'Skip & Finish'}
                 </Button>
               </div>
             </div>

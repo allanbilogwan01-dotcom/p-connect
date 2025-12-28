@@ -82,6 +82,13 @@ export default function ReportsPage() {
     setShowPrintLog(false);
   };
 
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}m`;
+  };
+
   const generateCSV = () => {
     let csvContent = '';
     
@@ -90,9 +97,9 @@ export default function ReportsPage() {
       filteredSessions.forEach(session => {
         const visitor = visitors.find(v => v.id === session.visitor_id);
         const pdl = pdls.find(p => p.id === session.pdl_id);
-        const duration = session.time_out 
+        const durationMins = session.time_out 
           ? Math.round((new Date(session.time_out).getTime() - new Date(session.time_in).getTime()) / 60000)
-          : 'Ongoing';
+          : null;
         
         csvContent += `${new Date(session.time_in).toLocaleDateString()},`;
         csvContent += `${new Date(session.time_in).toLocaleTimeString()},`;
@@ -102,7 +109,7 @@ export default function ReportsPage() {
         csvContent += `"${pdl?.first_name} ${pdl?.last_name}",`;
         csvContent += `${pdl?.pdl_code},`;
         csvContent += `${session.visit_type},`;
-        csvContent += `${duration}${typeof duration === 'number' ? ' min' : ''}\n`;
+        csvContent += `${durationMins !== null ? formatDuration(durationMins) : 'Ongoing'}\n`;
       });
     } else if (reportType === 'visitors') {
       csvContent = 'Visitor Code,Name,Gender,Age,Contact,Address,Status,Created Date\n';
@@ -127,6 +134,29 @@ export default function ReportsPage() {
         csvContent += `"${crimesStr}",`;
         csvContent += `${pdl.status},`;
         csvContent += `${new Date(pdl.date_of_commit).toLocaleDateString()}\n`;
+      });
+    } else if (reportType === 'visit_type') {
+      csvContent = 'Visit Type,Count,Percentage\n';
+      const regular = filteredSessions.filter(s => s.visit_type === 'regular').length;
+      const conjugal = filteredSessions.filter(s => s.visit_type === 'conjugal').length;
+      const total = filteredSessions.length || 1;
+      csvContent += `Regular,${regular},${((regular/total)*100).toFixed(1)}%\n`;
+      csvContent += `Conjugal,${conjugal},${((conjugal/total)*100).toFixed(1)}%\n`;
+    } else if (reportType === 'age') {
+      csvContent = 'Age Group,Visitor Count\n';
+      const ageGroups: Record<string, number> = { '0-17': 0, '18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56+': 0 };
+      visitors.forEach(v => {
+        if (!v.date_of_birth) return;
+        const age = Math.floor((Date.now() - new Date(v.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        if (age < 18) ageGroups['0-17']++;
+        else if (age <= 25) ageGroups['18-25']++;
+        else if (age <= 35) ageGroups['26-35']++;
+        else if (age <= 45) ageGroups['36-45']++;
+        else if (age <= 55) ageGroups['46-55']++;
+        else ageGroups['56+']++;
+      });
+      Object.entries(ageGroups).forEach(([group, count]) => {
+        csvContent += `${group},${count}\n`;
       });
     }
 
@@ -217,6 +247,8 @@ export default function ReportsPage() {
                   <SelectItem value="visits">Visit Sessions</SelectItem>
                   <SelectItem value="visitors">Visitor List</SelectItem>
                   <SelectItem value="pdl">PDL List</SelectItem>
+                  <SelectItem value="visit_type">By Visit Type</SelectItem>
+                  <SelectItem value="age">By Age Group</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -325,7 +357,7 @@ export default function ReportsPage() {
                   {filteredSessions.slice(0, 50).map(session => {
                     const visitor = visitors.find(v => v.id === session.visitor_id);
                     const pdl = pdls.find(p => p.id === session.pdl_id);
-                    const duration = session.time_out 
+                    const durationMins = session.time_out 
                       ? Math.round((new Date(session.time_out).getTime() - new Date(session.time_in).getTime()) / 60000)
                       : null;
                     return (
@@ -350,12 +382,73 @@ export default function ReportsPage() {
                         </td>
                         <td>{new Date(session.time_in).toLocaleTimeString()}</td>
                         <td>{session.time_out ? new Date(session.time_out).toLocaleTimeString() : '-'}</td>
-                        <td>{duration ? `${duration} min` : <Badge className="status-pending">Ongoing</Badge>}</td>
+                        <td>{durationMins !== null ? formatDuration(durationMins) : <Badge className="status-pending">Ongoing</Badge>}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            )}
+
+            {reportType === 'visit_type' && (
+              <div className="p-6 space-y-4">
+                <h3 className="font-semibold text-lg">Visit Type Breakdown</h3>
+                {(() => {
+                  const regular = filteredSessions.filter(s => s.visit_type === 'regular').length;
+                  const conjugal = filteredSessions.filter(s => s.visit_type === 'conjugal').length;
+                  const total = filteredSessions.length || 1;
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-lg bg-info/10 border border-info/30">
+                        <p className="text-sm text-muted-foreground">Regular Visits</p>
+                        <p className="text-3xl font-bold text-info">{regular}</p>
+                        <p className="text-sm text-muted-foreground">{((regular/total)*100).toFixed(1)}% of total</p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-success/10 border border-success/30">
+                        <p className="text-sm text-muted-foreground">Conjugal Visits</p>
+                        <p className="text-3xl font-bold text-success">{conjugal}</p>
+                        <p className="text-sm text-muted-foreground">{((conjugal/total)*100).toFixed(1)}% of total</p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {reportType === 'age' && (
+              <div className="p-6 space-y-4">
+                <h3 className="font-semibold text-lg">Visitor Age Distribution</h3>
+                {(() => {
+                  const ageGroups: Record<string, number> = { '0-17': 0, '18-25': 0, '26-35': 0, '36-45': 0, '46-55': 0, '56+': 0 };
+                  visitors.forEach(v => {
+                    if (!v.date_of_birth) return;
+                    const age = Math.floor((Date.now() - new Date(v.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+                    if (age < 18) ageGroups['0-17']++;
+                    else if (age <= 25) ageGroups['18-25']++;
+                    else if (age <= 35) ageGroups['26-35']++;
+                    else if (age <= 45) ageGroups['36-45']++;
+                    else if (age <= 55) ageGroups['46-55']++;
+                    else ageGroups['56+']++;
+                  });
+                  const maxCount = Math.max(...Object.values(ageGroups)) || 1;
+                  return (
+                    <div className="space-y-3">
+                      {Object.entries(ageGroups).map(([group, count]) => (
+                        <div key={group} className="flex items-center gap-4">
+                          <span className="w-16 text-sm font-medium">{group}</span>
+                          <div className="flex-1 h-8 bg-muted rounded-lg overflow-hidden">
+                            <div 
+                              className="h-full bg-primary transition-all"
+                              style={{ width: `${(count / maxCount) * 100}%` }}
+                            />
+                          </div>
+                          <span className="w-12 text-sm text-right">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             )}
 
             {reportType === 'visitors' && (

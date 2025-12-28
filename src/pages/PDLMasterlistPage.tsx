@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Users, Plus, Search, Filter, MoreHorizontal, 
-  Edit, Eye, Camera, Download, CreditCard, Check, RefreshCw, Scan, Loader2, X, Upload, FileSpreadsheet
+  Edit, Eye, Camera, Download, Check, RefreshCw, Scan, Loader2, X, Upload, FileSpreadsheet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,9 +31,9 @@ import {
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { getPDLs, createPDL, updatePDL, createAuditLog, saveBiometric, getBiometricByVisitorId } from '@/lib/localStorage';
+import { getPDLs, createPDL, updatePDL, createAuditLog, saveBiometric, getBiometricByVisitorId, getPDLVisitorLinks, getVisitors } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
-import { PDLIDCard } from '@/components/IDCard';
+
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
 import { useCameraContext } from '@/hooks/useCameraContext';
@@ -47,7 +47,7 @@ export default function PDLMasterlistPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPDL, setEditingPDL] = useState<PDL | null>(null);
   const [viewingPDL, setViewingPDL] = useState<PDL | null>(null);
-  const [showIDCard, setShowIDCard] = useState<PDL | null>(null);
+  
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -557,10 +557,6 @@ export default function PDLMasterlistPage() {
                               <Edit className="w-4 h-4 mr-2" />
                               EDIT
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setShowIDCard(pdl)}>
-                              <CreditCard className="w-4 h-4 mr-2" />
-                              VIEW ID CARD
-                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -790,7 +786,7 @@ export default function PDLMasterlistPage() {
 
       {/* View Dialog */}
       <Dialog open={!!viewingPDL} onOpenChange={() => setViewingPDL(null)}>
-        <DialogContent className="max-w-lg glass-card border-border">
+        <DialogContent className="max-w-lg glass-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Eye className="w-6 h-6 text-primary" />
@@ -850,14 +846,49 @@ export default function PDLMasterlistPage() {
                 </div>
               </div>
               
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => {
-                  setShowIDCard(viewingPDL);
-                  setViewingPDL(null);
-                }}>
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  VIEW ID CARD
-                </Button>
+              {/* Linked Visitors Section */}
+              <div className="border-t border-border pt-4">
+                <p className="text-muted-foreground text-sm font-semibold mb-2">LINKED VISITORS (KIN DALAW)</p>
+                {(() => {
+                  const links = getPDLVisitorLinks().filter(l => l.pdl_id === viewingPDL.id);
+                  if (links.length === 0) {
+                    return <p className="text-sm text-muted-foreground italic">No linked visitors</p>;
+                  }
+                  return (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {links.map(link => {
+                        const visitor = getVisitors().find(v => v.id === link.visitor_id);
+                        if (!visitor) return null;
+                        return (
+                          <div key={link.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                            <div className="flex items-center gap-2">
+                              {visitor.photo_url ? (
+                                <img src={visitor.photo_url} alt="" className="w-8 h-8 rounded-full object-cover" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-semibold text-primary">
+                                  {visitor.first_name.charAt(0)}{visitor.last_name.charAt(0)}
+                                </div>
+                              )}
+                              <div>
+                                <p className="text-sm font-medium uppercase">{visitor.last_name}, {visitor.first_name}</p>
+                                <p className="text-xs text-muted-foreground">{link.relationship.replace(/_/g, ' ')}</p>
+                              </div>
+                            </div>
+                            <Badge className={
+                              link.approval_status === 'approved' ? 'status-approved' :
+                              link.approval_status === 'rejected' ? 'status-rejected' : 'status-pending'
+                            }>
+                              {link.approval_status}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+              
+              <div className="flex gap-2 pt-2">
                 <Button className="flex-1" onClick={() => {
                   handleEdit(viewingPDL);
                   setViewingPDL(null);
@@ -871,50 +902,6 @@ export default function PDLMasterlistPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ID Card Dialog */}
-      <Dialog open={!!showIDCard} onOpenChange={() => setShowIDCard(null)}>
-        <DialogContent className="max-w-md glass-card border-border">
-          <DialogHeader>
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <CreditCard className="w-6 h-6 text-primary" />
-              PDL ID CARD
-            </DialogTitle>
-          </DialogHeader>
-          
-          {showIDCard && (
-            <div className="space-y-4">
-              <div ref={idCardRef}>
-                <PDLIDCard pdl={showIDCard} />
-              </div>
-              
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={handlePrintID}>
-                  <Download className="w-4 h-4 mr-2" />
-                  PRINT
-                </Button>
-                {!hasBiometrics(showIDCard.id) && (
-                  <Button className="flex-1 btn-scanner" onClick={() => {
-                    startBiometricEnrollment();
-                    setTimeout(() => runEnrollmentCapture(showIDCard.id), 500);
-                  }} disabled={faceLoading}>
-                    {faceLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Scan className="w-4 h-4 mr-2" />}
-                    ENROLL BIOMETRICS
-                  </Button>
-                )}
-                {hasBiometrics(showIDCard.id) && (
-                  <Button variant="outline" className="flex-1" onClick={() => {
-                    startBiometricEnrollment();
-                    setTimeout(() => runEnrollmentCapture(showIDCard.id), 500);
-                  }} disabled={faceLoading}>
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    RE-ENROLL
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </motion.div>
   );
 }
