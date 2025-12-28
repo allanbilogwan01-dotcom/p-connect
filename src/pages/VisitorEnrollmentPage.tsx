@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { 
   UserPlus, Search, Camera, QrCode, Check, 
   Edit, RefreshCw, CreditCard,
-  Download, Scan, Loader2, Plus, Link2, ChevronRight
+  Download, Scan, Loader2, Plus, Link2, ChevronRight, Upload, FileSpreadsheet, History, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { 
   getVisitors, createVisitor, updateVisitor, createAuditLog, 
   saveBiometric, getBiometricByVisitorId, getPDLs, 
-  createPDLVisitorLink, getPDLVisitorLinks 
+  createPDLVisitorLink, getPDLVisitorLinks, getVisitSessions
 } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
@@ -39,6 +39,7 @@ import { VisitorIDCard } from '@/components/IDCard';
 import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { RELATIONSHIP_LABELS, CATEGORY_LABELS } from '@/types';
+import { exportVisitorsToExcel, parseVisitorsFromExcel, downloadVisitorTemplate, calculateAge } from '@/lib/excelUtils';
 import type { Visitor, RelationshipType, VisitorCategory } from '@/types';
 
 export default function VisitorEnrollmentPage() {
@@ -51,6 +52,8 @@ export default function VisitorEnrollmentPage() {
   const [showCamera, setShowCamera] = useState(false);
   const [showQR, setShowQR] = useState<Visitor | null>(null);
   const [showIDCard, setShowIDCard] = useState<Visitor | null>(null);
+  const [showHistory, setShowHistory] = useState<Visitor | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   
   // Enhanced enrollment states
   const [enrollmentStep, setEnrollmentStep] = useState<'info' | 'biometric' | 'link'>('info');
@@ -68,6 +71,7 @@ export default function VisitorEnrollmentPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const idCardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -434,6 +438,65 @@ export default function VisitorEnrollmentPage() {
 
   const categoryOptions: VisitorCategory[] = ['immediate_family', 'legal_guardian', 'close_friend'];
 
+  const handleExportExcel = () => {
+    exportVisitorsToExcel(visitors);
+    toast({ title: 'EXPORT COMPLETE', description: 'Visitor masterlist exported to Excel.' });
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const importedVisitors = await parseVisitorsFromExcel(file);
+      let importedCount = 0;
+      
+      for (const visitorData of importedVisitors) {
+        if (visitorData.first_name && visitorData.last_name && visitorData.date_of_birth) {
+          createVisitor({
+            first_name: visitorData.first_name,
+            middle_name: visitorData.middle_name,
+            last_name: visitorData.last_name,
+            suffix: visitorData.suffix,
+            date_of_birth: visitorData.date_of_birth,
+            gender: visitorData.gender || 'male',
+            contact_number: visitorData.contact_number || '',
+            address: visitorData.address || '',
+            valid_id_type: visitorData.valid_id_type,
+            valid_id_number: visitorData.valid_id_number,
+            status: 'active',
+          });
+          importedCount++;
+        }
+      }
+      
+      setVisitors(getVisitors());
+      toast({ 
+        title: 'IMPORT COMPLETE', 
+        description: `${importedCount} visitor records imported successfully.` 
+      });
+    } catch (error) {
+      toast({ 
+        title: 'IMPORT ERROR', 
+        description: 'Failed to parse Excel file. Please check the format.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const getVisitorHistory = (visitorId: string) => {
+    const sessions = getVisitSessions();
+    return sessions
+      .filter(s => s.visitor_id === visitorId)
+      .sort((a, b) => new Date(b.time_in).getTime() - new Date(a.time_in).getTime());
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -451,10 +514,31 @@ export default function VisitorEnrollmentPage() {
             Register and manage visitor records with biometric enrollment
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="btn-scanner">
-          <Plus className="w-5 h-5 mr-2" />
-          Enroll Visitor
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={downloadVisitorTemplate} className="gap-2">
+            <FileSpreadsheet className="w-4 h-4" />
+            TEMPLATE
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="gap-2">
+            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            IMPORT
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleImportExcel}
+            className="hidden"
+          />
+          <Button variant="outline" onClick={handleExportExcel} className="gap-2">
+            <Download className="w-4 h-4" />
+            EXPORT
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)} className="btn-scanner">
+            <Plus className="w-5 h-5 mr-2" />
+            Enroll Visitor
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -535,6 +619,9 @@ export default function VisitorEnrollmentPage() {
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setShowIDCard(visitor)}>
                         <CreditCard className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setShowHistory(visitor)}>
+                        <History className="w-4 h-4" />
                       </Button>
                       {!hasBiometrics(visitor.id) && (
                         <Button 
@@ -1013,6 +1100,85 @@ export default function VisitorEnrollmentPage() {
                   <Download className="w-4 h-4 mr-2" />
                   Print ID
                 </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* Visit History Dialog */}
+      <Dialog open={!!showHistory} onOpenChange={() => setShowHistory(null)}>
+        <DialogContent className="sm:max-w-lg glass-card border-border max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <History className="w-6 h-6 text-primary" />
+              VISIT HISTORY
+            </DialogTitle>
+          </DialogHeader>
+          {showHistory && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                {showHistory.photo_url ? (
+                  <img src={showHistory.photo_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                    <span className="text-primary font-semibold">
+                      {showHistory.first_name.charAt(0)}{showHistory.last_name.charAt(0)}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <p className="font-semibold uppercase">{showHistory.last_name}, {showHistory.first_name}</p>
+                  <p className="text-sm text-muted-foreground font-mono">{showHistory.visitor_code}</p>
+                </div>
+              </div>
+              
+              <div className="max-h-[400px] overflow-y-auto space-y-2">
+                {getVisitorHistory(showHistory.id).length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>No visit history found</p>
+                  </div>
+                ) : (
+                  getVisitorHistory(showHistory.id).map((session) => {
+                    const pdl = pdls.find(p => p.id === session.pdl_id);
+                    const duration = session.time_out 
+                      ? Math.round((new Date(session.time_out).getTime() - new Date(session.time_in).getTime()) / 60000)
+                      : null;
+                    return (
+                      <div key={session.id} className="p-3 rounded-lg bg-muted/20 border border-border/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-sm">
+                              Visited: <span className="text-primary">{pdl?.last_name}, {pdl?.first_name}</span>
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(session.time_in).toLocaleDateString()} at {new Date(session.time_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <Badge className={session.visit_type === 'conjugal' ? 'status-approved' : 'status-active'}>
+                              {session.visit_type}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {duration !== null ? `${duration} min` : 'Ongoing'}
+                            </p>
+                          </div>
+                        </div>
+                        {session.time_out && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Out: {new Date(session.time_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              
+              <div className="pt-2 border-t border-border">
+                <p className="text-sm text-muted-foreground">
+                  Total visits: <span className="text-foreground font-semibold">{getVisitorHistory(showHistory.id).length}</span>
+                </p>
               </div>
             </div>
           )}

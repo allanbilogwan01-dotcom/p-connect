@@ -2,14 +2,15 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { 
   Users, UserCheck, Clock, AlertCircle, TrendingUp, 
-  Activity, Calendar, ArrowUpRight, Plus, LogIn, UserPlus, Link2
+  Activity, Calendar, ArrowUpRight, Plus, LogIn, UserPlus, Link2, PieChart as PieChartIcon
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getDashboardStats, getAnalyticsData, getActiveSessions, getVisitors, getPDLs } from '@/lib/localStorage';
+import { getDashboardStats, getAnalyticsData, getActiveSessions, getVisitors, getPDLs, getTodaySessions } from '@/lib/localStorage';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { calculateAge } from '@/lib/excelUtils';
 
 const container = {
   hidden: { opacity: 0 },
@@ -31,6 +32,49 @@ export default function DashboardPage() {
   const activeSessions = getActiveSessions();
   const visitors = getVisitors();
   const pdls = getPDLs();
+  const todaySessions = getTodaySessions();
+
+  // Calculate today's visitor age demographics
+  const todayVisitorIds = [...new Set(todaySessions.map(s => s.visitor_id))];
+  const todayVisitors = visitors.filter(v => todayVisitorIds.includes(v.id));
+  
+  const getAgeGroup = (age: number) => {
+    if (age < 18) return '0-17';
+    if (age < 30) return '18-29';
+    if (age < 45) return '30-44';
+    if (age < 60) return '45-59';
+    return '60+';
+  };
+
+  const todayAgeGroups = todayVisitors.reduce((acc, v) => {
+    const age = calculateAge(v.date_of_birth);
+    const group = getAgeGroup(age);
+    acc[group] = (acc[group] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const todayAgeData = [
+    { name: '0-17', value: todayAgeGroups['0-17'] || 0, color: 'hsl(280, 65%, 60%)' },
+    { name: '18-29', value: todayAgeGroups['18-29'] || 0, color: 'hsl(199, 89%, 48%)' },
+    { name: '30-44', value: todayAgeGroups['30-44'] || 0, color: 'hsl(142, 76%, 36%)' },
+    { name: '45-59', value: todayAgeGroups['45-59'] || 0, color: 'hsl(38, 92%, 50%)' },
+    { name: '60+', value: todayAgeGroups['60+'] || 0, color: 'hsl(0, 72%, 51%)' },
+  ].filter(d => d.value > 0);
+
+  // Calculate today's peak hours
+  const todayHourCounts: Record<number, number> = {};
+  todaySessions.forEach(s => {
+    const hour = new Date(s.time_in).getHours();
+    todayHourCounts[hour] = (todayHourCounts[hour] || 0) + 1;
+  });
+
+  const todayPeakHours = Object.entries(todayHourCounts)
+    .map(([hour, count]) => ({
+      hour: `${hour.padStart(2, '0')}:00`,
+      visits: count,
+    }))
+    .sort((a, b) => b.visits - a.visits)
+    .slice(0, 5);
 
   const statCards = [
     {
@@ -178,6 +222,101 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         ))}
+      </motion.div>
+
+      {/* Today's Demographics & Peak Hours */}
+      <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Today's Visitor Age Demographics */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <PieChartIcon className="w-5 h-5 text-primary" />
+              Today's Visitor Age Demographics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {todayAgeData.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No visitors today yet</p>
+              </div>
+            ) : (
+              <>
+                <div className="h-[180px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={todayAgeData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {todayAgeData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(222, 47%, 10%)',
+                          border: '1px solid hsl(217, 33%, 20%)',
+                          borderRadius: '8px',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex justify-center gap-3 flex-wrap mt-2">
+                  {todayAgeData.map((entry) => (
+                    <div key={entry.name} className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                      <span className="text-xs text-muted-foreground">{entry.name}: {entry.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Today's Peak Visiting Hours */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              Today's Peak Visiting Hours
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {todayPeakHours.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No visits today yet</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {todayPeakHours.map((hour, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="font-mono text-sm text-primary w-12">{hour.hour}</span>
+                    <div className="flex-1 bg-muted/30 rounded-full h-4 overflow-hidden">
+                      <motion.div 
+                        className="h-full bg-gradient-to-r from-primary to-yellow-400 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${(hour.visits / Math.max(...todayPeakHours.map(h => h.visits))) * 100}%` }}
+                        transition={{ duration: 0.5, delay: i * 0.1 }}
+                      />
+                    </div>
+                    <Badge variant="outline" className="font-mono min-w-[40px] justify-center">
+                      {hour.visits}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* Charts Row */}
