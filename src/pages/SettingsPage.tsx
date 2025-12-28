@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Save, RotateCcw, Building, Users, Scan, 
-  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown
+  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown, Palette
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ import {
 } from '@/lib/localStorage';
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import type { SystemSettings, RelationshipType } from '@/types';
 
 const CONJUGAL_ELIGIBLE: RelationshipType[] = [
@@ -174,6 +175,26 @@ export default function SettingsPage() {
           </Button>
         )}
       </div>
+
+      {/* Appearance Settings */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Palette className="w-5 h-5 text-primary" />
+            APPEARANCE
+          </CardTitle>
+          <CardDescription>Customize the look and feel of the application</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>THEME</Label>
+            <ThemeSwitcher />
+            <p className="text-xs text-muted-foreground mt-2">
+              Choose between Royal themes (Dark, Gold, Purple, Silver) or Government Blue light theme
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Facility Settings */}
       <Card className="glass-card">
