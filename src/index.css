@@ -60,28 +60,30 @@
     --card-glow: 0 4px 20px hsl(222 47% 0% / 0.5);
   }
 
-  /* Royal Dark Theme - Elegant dark with royal accents */
-  .royal-dark {
-    --background: 240 15% 8%;
+  /* Royal Theme - Premium dark with gold/purple/silver accents */
+  .royal {
+    --background: 240 15% 6%;
     --foreground: 0 0% 95%;
 
-    --card: 240 15% 10%;
+    --card: 240 15% 9%;
     --card-foreground: 0 0% 95%;
 
-    --popover: 240 15% 12%;
+    --popover: 240 15% 11%;
     --popover-foreground: 0 0% 95%;
 
-    --primary: 265 89% 66%;
-    --primary-foreground: 0 0% 100%;
+    /* Gold primary accent */
+    --primary: 45 100% 50%;
+    --primary-foreground: 240 15% 6%;
 
-    --secondary: 240 15% 18%;
+    --secondary: 240 15% 16%;
     --secondary-foreground: 0 0% 95%;
 
-    --muted: 240 15% 15%;
+    --muted: 240 15% 13%;
     --muted-foreground: 240 10% 55%;
 
-    --accent: 265 50% 25%;
-    --accent-foreground: 0 0% 95%;
+    /* Purple accent */
+    --accent: 280 60% 45%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
@@ -90,207 +92,52 @@
     --success-foreground: 0 0% 98%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 240 15% 8%;
+    --warning-foreground: 240 15% 6%;
 
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 98%;
+    /* Silver info */
+    --info: 220 20% 70%;
+    --info-foreground: 240 15% 10%;
 
-    --border: 265 30% 25%;
-    --input: 240 15% 18%;
-    --ring: 265 89% 66%;
-
-    --sidebar-background: 240 15% 6%;
-    --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 265 89% 66%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 265 30% 18%;
-    --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 265 20% 20%;
-    --sidebar-ring: 265 89% 66%;
-
-    --gold-glow: 0 0 20px hsl(265 89% 66% / 0.3);
-    --card-glow: 0 4px 20px hsl(240 15% 0% / 0.5);
-  }
-
-  /* Royal Gold Theme - Luxurious gold */
-  .royal-gold {
-    --background: 35 25% 8%;
-    --foreground: 45 30% 95%;
-
-    --card: 35 25% 10%;
-    --card-foreground: 45 30% 95%;
-
-    --popover: 35 25% 12%;
-    --popover-foreground: 45 30% 95%;
-
-    --primary: 45 100% 50%;
-    --primary-foreground: 35 25% 8%;
-
-    --secondary: 35 25% 18%;
-    --secondary-foreground: 45 30% 95%;
-
-    --muted: 35 20% 15%;
-    --muted-foreground: 35 15% 55%;
-
-    --accent: 45 60% 20%;
-    --accent-foreground: 45 30% 95%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 35 25% 8%;
-
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 98%;
-
-    --border: 45 40% 25%;
-    --input: 35 25% 18%;
+    --border: 45 30% 20%;
+    --input: 240 15% 16%;
     --ring: 45 100% 50%;
 
-    --sidebar-background: 35 25% 6%;
-    --sidebar-foreground: 45 30% 95%;
+    --sidebar-background: 240 15% 5%;
+    --sidebar-foreground: 0 0% 95%;
     --sidebar-primary: 45 100% 50%;
-    --sidebar-primary-foreground: 35 25% 8%;
-    --sidebar-accent: 45 30% 15%;
-    --sidebar-accent-foreground: 45 30% 95%;
-    --sidebar-border: 45 25% 18%;
+    --sidebar-primary-foreground: 240 15% 6%;
+    --sidebar-accent: 280 40% 25%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 45 20% 18%;
     --sidebar-ring: 45 100% 50%;
 
-    --gold-glow: 0 0 25px hsl(45 100% 50% / 0.4);
-    --card-glow: 0 4px 20px hsl(35 25% 0% / 0.5);
+    --gold-glow: 0 0 25px hsl(45 100% 50% / 0.35);
+    --card-glow: 0 4px 20px hsl(280 60% 30% / 0.2);
   }
 
-  /* Royal Purple Theme - Majestic purple */
-  .royal-purple {
-    --background: 280 30% 8%;
-    --foreground: 270 20% 95%;
-
-    --card: 280 30% 10%;
-    --card-foreground: 270 20% 95%;
-
-    --popover: 280 30% 12%;
-    --popover-foreground: 270 20% 95%;
-
-    --primary: 280 100% 65%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 280 25% 18%;
-    --secondary-foreground: 270 20% 95%;
-
-    --muted: 280 20% 15%;
-    --muted-foreground: 280 15% 55%;
-
-    --accent: 280 50% 25%;
-    --accent-foreground: 270 20% 95%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 280 30% 8%;
-
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 98%;
-
-    --border: 280 40% 25%;
-    --input: 280 25% 18%;
-    --ring: 280 100% 65%;
-
-    --sidebar-background: 280 30% 6%;
-    --sidebar-foreground: 270 20% 95%;
-    --sidebar-primary: 280 100% 65%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 280 30% 15%;
-    --sidebar-accent-foreground: 270 20% 95%;
-    --sidebar-border: 280 25% 18%;
-    --sidebar-ring: 280 100% 65%;
-
-    --gold-glow: 0 0 25px hsl(280 100% 65% / 0.4);
-    --card-glow: 0 4px 20px hsl(280 30% 0% / 0.5);
-  }
-
-  /* Royal Silver Theme - Refined silver */
-  .royal-silver {
-    --background: 220 15% 12%;
-    --foreground: 220 10% 95%;
-
-    --card: 220 15% 14%;
-    --card-foreground: 220 10% 95%;
-
-    --popover: 220 15% 16%;
-    --popover-foreground: 220 10% 95%;
-
-    --primary: 220 20% 70%;
-    --primary-foreground: 220 15% 10%;
-
-    --secondary: 220 15% 22%;
-    --secondary-foreground: 220 10% 95%;
-
-    --muted: 220 12% 18%;
-    --muted-foreground: 220 10% 55%;
-
-    --accent: 220 18% 28%;
-    --accent-foreground: 220 10% 95%;
-
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-
-    --warning: 38 92% 50%;
-    --warning-foreground: 220 15% 10%;
-
-    --info: 199 89% 48%;
-    --info-foreground: 0 0% 98%;
-
-    --border: 220 15% 30%;
-    --input: 220 15% 22%;
-    --ring: 220 20% 70%;
-
-    --sidebar-background: 220 15% 10%;
-    --sidebar-foreground: 220 10% 95%;
-    --sidebar-primary: 220 20% 70%;
-    --sidebar-primary-foreground: 220 15% 10%;
-    --sidebar-accent: 220 15% 18%;
-    --sidebar-accent-foreground: 220 10% 95%;
-    --sidebar-border: 220 12% 22%;
-    --sidebar-ring: 220 20% 70%;
-
-    --gold-glow: 0 0 20px hsl(220 20% 70% / 0.3);
-    --card-glow: 0 4px 20px hsl(220 15% 0% / 0.5);
-  }
-
-  /* Government Blue Theme - Official light theme */
-  .government-blue,
+  /* Light / Government Theme - Official with navy blue and white */
   .light {
     --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    --foreground: 217 50% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 217 50% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 217 50% 15%;
 
-    --primary: 217 91% 45%;
+    /* Navy blue primary */
+    --primary: 217 80% 35%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 94%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary-foreground: 217 50% 15%;
 
     --muted: 210 40% 90%;
-    --muted-foreground: 215 25% 45%;
+    --muted-foreground: 217 30% 40%;
 
-    --accent: 210 40% 92%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 217 70% 92%;
+    --accent-foreground: 217 50% 15%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
@@ -299,26 +146,26 @@
     --success-foreground: 0 0% 98%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 217 50% 15%;
 
     --info: 199 89% 48%;
     --info-foreground: 0 0% 98%;
 
-    --border: 214 32% 85%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 45%;
+    --border: 217 30% 80%;
+    --input: 217 30% 90%;
+    --ring: 217 80% 35%;
 
-    --sidebar-background: 217 91% 20%;
+    --sidebar-background: 217 80% 25%;
     --sidebar-foreground: 0 0% 100%;
     --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 217 91% 20%;
-    --sidebar-accent: 217 70% 30%;
+    --sidebar-primary-foreground: 217 80% 25%;
+    --sidebar-accent: 217 70% 35%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 217 60% 35%;
+    --sidebar-border: 217 60% 40%;
     --sidebar-ring: 0 0% 100%;
 
-    --gold-glow: 0 0 20px hsl(217 91% 45% / 0.2);
-    --card-glow: 0 4px 20px hsl(222 47% 11% / 0.1);
+    --gold-glow: 0 0 20px hsl(217 80% 35% / 0.2);
+    --card-glow: 0 4px 15px hsl(217 50% 15% / 0.08);
   }
 }
 
@@ -378,6 +225,10 @@
     @apply bg-success/20 text-success border border-success/30;
   }
 
+  .status-blacklisted {
+    @apply bg-destructive/20 text-destructive border border-destructive/30;
+  }
+
   .nav-link {
     @apply flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground;
   }
@@ -408,10 +259,11 @@
   }
 
   .stat-card {
-    @apply glass-card rounded-xl p-6 transition-all duration-300 hover:border-primary/30;
+    @apply glass-card rounded-xl p-6 transition-all duration-200;
   }
 
   .stat-card:hover {
+    @apply border-primary/30;
     box-shadow: var(--gold-glow);
   }
 
@@ -420,10 +272,11 @@
   }
 
   .btn-scanner {
-    @apply bg-gradient-to-r from-primary to-yellow-500 text-primary-foreground font-semibold shadow-lg hover:shadow-xl transition-all duration-300;
+    @apply bg-gradient-to-r from-primary to-yellow-500 text-primary-foreground font-semibold shadow-lg transition-all duration-200;
   }
 
   .btn-scanner:hover {
+    @apply shadow-xl;
     box-shadow: var(--gold-glow);
   }
 }
