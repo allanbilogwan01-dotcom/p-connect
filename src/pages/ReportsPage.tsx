@@ -105,11 +105,13 @@ export default function ReportsPage() {
         csvContent += `${duration}${typeof duration === 'number' ? ' min' : ''}\n`;
       });
     } else if (reportType === 'visitors') {
-      csvContent = 'Visitor Code,Name,Gender,Contact,Address,Status,Created Date\n';
+      csvContent = 'Visitor Code,Name,Gender,Age,Contact,Address,Status,Created Date\n';
       visitors.forEach(visitor => {
+        const age = visitor.date_of_birth ? Math.floor((Date.now() - new Date(visitor.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A';
         csvContent += `${visitor.visitor_code},`;
         csvContent += `"${visitor.first_name} ${visitor.last_name}",`;
         csvContent += `${visitor.gender},`;
+        csvContent += `${age},`;
         csvContent += `${visitor.contact_number},`;
         csvContent += `"${visitor.address}",`;
         csvContent += `${visitor.status},`;
@@ -363,26 +365,31 @@ export default function ReportsPage() {
                     <th>Code</th>
                     <th>Name</th>
                     <th>Gender</th>
+                    <th>Age</th>
                     <th>Contact</th>
                     <th>Status</th>
                     <th>Registered</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visitors.slice(0, 50).map(visitor => (
-                    <tr key={visitor.id}>
-                      <td className="font-mono text-primary">{visitor.visitor_code}</td>
-                      <td>{visitor.first_name} {visitor.last_name}</td>
-                      <td className="capitalize">{visitor.gender}</td>
-                      <td>{visitor.contact_number}</td>
-                      <td>
-                        <Badge className={visitor.status === 'active' ? 'status-active' : 'status-rejected'}>
-                          {visitor.status}
-                        </Badge>
-                      </td>
-                      <td>{new Date(visitor.created_at).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
+                  {visitors.slice(0, 50).map(visitor => {
+                    const age = visitor.date_of_birth ? Math.floor((Date.now() - new Date(visitor.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null;
+                    return (
+                      <tr key={visitor.id}>
+                        <td className="font-mono text-primary">{visitor.visitor_code}</td>
+                        <td>{visitor.first_name} {visitor.last_name}</td>
+                        <td className="capitalize">{visitor.gender}</td>
+                        <td>{age !== null ? `${age} yrs` : '-'}</td>
+                        <td>{visitor.contact_number}</td>
+                        <td>
+                          <Badge className={visitor.status === 'active' ? 'status-active' : 'status-rejected'}>
+                            {visitor.status}
+                          </Badge>
+                        </td>
+                        <td>{new Date(visitor.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

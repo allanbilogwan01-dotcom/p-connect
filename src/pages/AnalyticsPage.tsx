@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { 
   BarChart3, TrendingUp, Users, Clock, Calendar,
-  PieChart as PieChartIcon, Activity, ArrowUpRight, ArrowDownRight
+  PieChart as PieChartIcon, Activity, ArrowUpRight, ArrowDownRight, UserCheck
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { getAnalyticsData, getDashboardStats, getVisitSessions, getPDLs, getVisitors } from '@/lib/localStorage';
 import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from 'date-fns';
+import { calculateAge } from '@/lib/excelUtils';
 
 const container = {
   hidden: { opacity: 0 },
@@ -63,6 +64,30 @@ export default function AnalyticsPage() {
     { name: 'Active', value: visitors.filter(v => v.status === 'active').length, color: 'hsl(199, 89%, 48%)' },
     { name: 'Inactive', value: visitors.filter(v => v.status === 'inactive').length, color: 'hsl(217, 33%, 50%)' },
     { name: 'Blacklisted', value: visitors.filter(v => v.status === 'blacklisted').length, color: 'hsl(0, 72%, 51%)' },
+  ];
+
+  // Visitor Age Distribution
+  const getAgeGroup = (age: number) => {
+    if (age < 18) return '0-17';
+    if (age < 30) return '18-29';
+    if (age < 45) return '30-44';
+    if (age < 60) return '45-59';
+    return '60+';
+  };
+
+  const visitorAgeGroups = visitors.reduce((acc, v) => {
+    const age = calculateAge(v.date_of_birth);
+    const group = getAgeGroup(age);
+    acc[group] = (acc[group] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const visitorAgeData = [
+    { name: '0-17', value: visitorAgeGroups['0-17'] || 0, color: 'hsl(280, 65%, 60%)' },
+    { name: '18-29', value: visitorAgeGroups['18-29'] || 0, color: 'hsl(199, 89%, 48%)' },
+    { name: '30-44', value: visitorAgeGroups['30-44'] || 0, color: 'hsl(142, 76%, 36%)' },
+    { name: '45-59', value: visitorAgeGroups['45-59'] || 0, color: 'hsl(38, 92%, 50%)' },
+    { name: '60+', value: visitorAgeGroups['60+'] || 0, color: 'hsl(0, 72%, 51%)' },
   ];
 
   // Growth calculations
@@ -352,6 +377,49 @@ export default function AnalyticsPage() {
           </Card>
         </motion.div>
       </div>
+
+      {/* Visitor Age Distribution */}
+      <motion.div variants={item}>
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-primary" />
+              Visitor Age Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={visitorAgeData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(217, 33%, 20%)" />
+                  <XAxis dataKey="name" stroke="hsl(215, 20%, 55%)" fontSize={12} />
+                  <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(222, 47%, 10%)',
+                      border: '1px solid hsl(217, 33%, 20%)',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Bar dataKey="value" name="Visitors" radius={[4, 4, 0, 0]}>
+                    {visitorAgeData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex justify-center gap-3 mt-4 flex-wrap">
+              {visitorAgeData.map((entry) => (
+                <div key={entry.name} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
+                  <span className="text-sm text-muted-foreground">{entry.name}: {entry.value}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Top Lists */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

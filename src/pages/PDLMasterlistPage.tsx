@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Users, Plus, Search, Filter, MoreHorizontal, 
-  Edit, Eye, Camera, Download, CreditCard, Check, RefreshCw, Scan, Loader2, X
+  Edit, Eye, Camera, Download, CreditCard, Check, RefreshCw, Scan, Loader2, X, Upload, FileSpreadsheet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,7 @@ import { PDLIDCard } from '@/components/IDCard';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
 import { useCameraContext } from '@/hooks/useCameraContext';
+import { exportPDLsToExcel, parsePDLsFromExcel, downloadPDLTemplate, calculateAge } from '@/lib/excelUtils';
 import type { PDL, CrimeEntry } from '@/types';
 
 export default function PDLMasterlistPage() {
@@ -49,6 +50,7 @@ export default function PDLMasterlistPage() {
   const [showIDCard, setShowIDCard] = useState<PDL | null>(null);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   
   // Biometric enrollment states
   const [enrollingBiometrics, setEnrollingBiometrics] = useState(false);
@@ -58,6 +60,7 @@ export default function PDLMasterlistPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const idCardRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
   const { toast } = useToast();
   
@@ -195,7 +198,6 @@ export default function PDLMasterlistPage() {
         setBiometricProgress(progress);
         
         if (newEmbeddings.length >= 5) {
-          // Save biometrics using PDL ID as visitor_id (they share biometric storage)
           saveBiometric(pdlId, newEmbeddings, newEmbeddings.map(() => 0.9));
           stopCamera();
           
@@ -308,18 +310,6 @@ export default function PDLMasterlistPage() {
   const removeCrime = (index: number) => {
     setFormData(prev => ({ ...prev, crimes: prev.crimes.filter((_, i) => i !== index) }));
   };
-  
-  const calculateAge = (dateOfBirth: string): number => {
-    if (!dateOfBirth) return 0;
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
-  };
 
   const handlePrintID = () => {
     if (!idCardRef.current) return;
@@ -346,6 +336,56 @@ export default function PDLMasterlistPage() {
 
   const hasBiometrics = (pdlId: string) => {
     return !!getBiometricByVisitorId(pdlId);
+  };
+
+  const handleExportExcel = () => {
+    exportPDLsToExcel(pdls);
+    toast({ title: 'EXPORT COMPLETE', description: 'PDL masterlist exported to Excel.' });
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const importedPDLs = await parsePDLsFromExcel(file);
+      let importedCount = 0;
+      
+      for (const pdlData of importedPDLs) {
+        if (pdlData.first_name && pdlData.last_name && pdlData.date_of_birth) {
+          createPDL({
+            first_name: pdlData.first_name,
+            middle_name: pdlData.middle_name,
+            last_name: pdlData.last_name,
+            suffix: pdlData.suffix,
+            date_of_birth: pdlData.date_of_birth,
+            gender: pdlData.gender || 'male',
+            date_of_commit: pdlData.date_of_commit || new Date().toISOString().split('T')[0],
+            crimes: pdlData.crimes || [],
+            status: 'detained',
+          });
+          importedCount++;
+        }
+      }
+      
+      setPDLs(getPDLs());
+      toast({ 
+        title: 'IMPORT COMPLETE', 
+        description: `${importedCount} PDL records imported successfully.` 
+      });
+    } catch (error) {
+      toast({ 
+        title: 'IMPORT ERROR', 
+        description: 'Failed to parse Excel file. Please check the format.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
   };
 
   const statusBadge = (status: string) => {
@@ -380,10 +420,31 @@ export default function PDLMasterlistPage() {
             Manage Person Deprived of Liberty records
           </p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="btn-scanner">
-          <Plus className="w-5 h-5 mr-2" />
-          ADD NEW PDL
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={downloadPDLTemplate} className="gap-2">
+            <FileSpreadsheet className="w-4 h-4" />
+            TEMPLATE
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="gap-2">
+            {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            IMPORT
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleImportExcel}
+            className="hidden"
+          />
+          <Button variant="outline" onClick={handleExportExcel} className="gap-2">
+            <Download className="w-4 h-4" />
+            EXPORT
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)} className="btn-scanner">
+            <Plus className="w-5 h-5 mr-2" />
+            ADD NEW PDL
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -474,7 +535,9 @@ export default function PDLMasterlistPage() {
                       </td>
                       <td className="uppercase">{pdl.gender}</td>
                       <td>
-                        <span className="text-sm">{calculateAge(pdl.date_of_birth)} YRS</span>
+                        <Badge variant="outline" className="font-mono">
+                          {calculateAge(pdl.date_of_birth)} YRS
+                        </Badge>
                       </td>
                       <td>{new Date(pdl.date_of_commit).toLocaleDateString()}</td>
                       <td>{statusBadge(pdl.status)}</td>
@@ -486,17 +549,17 @@ export default function PDLMasterlistPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEdit(pdl)}>
-                              <Edit className="w-4 h-4 mr-2" />
-                              EDIT
-                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setViewingPDL(pdl)}>
                               <Eye className="w-4 h-4 mr-2" />
                               VIEW DETAILS
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEdit(pdl)}>
+                              <Edit className="w-4 h-4 mr-2" />
+                              EDIT
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setShowIDCard(pdl)}>
                               <CreditCard className="w-4 h-4 mr-2" />
-                              GENERATE ID
+                              VIEW ID CARD
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -511,8 +574,11 @@ export default function PDLMasterlistPage() {
       </Card>
 
       {/* Add/Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => !open && resetForm()}>
-        <DialogContent className="sm:max-w-2xl glass-card border-border max-h-[90vh] overflow-y-auto">
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        if (!open) resetForm();
+        setIsDialogOpen(open);
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto glass-card border-border">
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <Users className="w-6 h-6 text-primary" />
@@ -521,94 +587,75 @@ export default function PDLMasterlistPage() {
           </DialogHeader>
           
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Photo Capture */}
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-32 h-32 rounded-xl overflow-hidden bg-muted border-2 border-dashed border-border relative">
-                {showCamera ? (
-                  <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline 
-                    muted
-                    className="w-full h-full object-cover"
-                    style={{ transform: 'scaleX(-1)' }}
-                  />
-                ) : capturedPhoto ? (
-                  <img src={capturedPhoto} alt="Captured" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Camera className="w-10 h-10 text-muted-foreground/50" />
-                  </div>
-                )}
-                
-                {enrollingBiometrics && (
-                  <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                  </div>
-                )}
-              </div>
-              
-              {/* Camera Selector */}
-              {devices.length > 1 && showCamera && (
-                <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                  <SelectTrigger className="w-48 h-8 text-xs">
-                    <Camera className="w-3 h-3 mr-1" />
-                    <SelectValue placeholder="Select camera" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {devices.map((device, idx) => (
-                      <SelectItem key={device.deviceId} value={device.deviceId}>
-                        {device.label || `Camera ${idx + 1}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              
-              {enrollingBiometrics && (
-                <div className="w-48 space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">CAPTURING...</span>
-                    <span className="text-primary font-mono">{Math.round(biometricProgress)}%</span>
-                  </div>
-                  <Progress value={biometricProgress} className="h-1.5" />
-                </div>
-              )}
-              
-              <div className="flex gap-2">
-                {showCamera ? (
-                  <>
-                    <Button type="button" onClick={capturePhoto} className="btn-scanner" size="sm">
-                      <Check className="w-4 h-4 mr-1" />
-                      CAPTURE
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={stopCamera}>
-                      CANCEL
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => startCamera()}>
-                      <Camera className="w-4 h-4 mr-1" />
-                      {capturedPhoto ? 'RETAKE' : 'TAKE PHOTO'}
-                    </Button>
-                    {capturedPhoto && (
-                      <Button type="button" variant="outline" size="sm" onClick={() => setCapturedPhoto(null)}>
-                        <RefreshCw className="w-4 h-4 mr-1" />
-                        REMOVE
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Photo Capture */}
+              <div className="md:col-span-2">
+                <Label>PHOTO</Label>
+                <div className="mt-2 flex items-center gap-4">
+                  {capturedPhoto ? (
+                    <div className="relative">
+                      <img src={capturedPhoto} alt="Captured" className="w-32 h-32 rounded-lg object-cover border border-border" />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        className="absolute -top-2 -right-2 w-6 h-6"
+                        onClick={() => setCapturedPhoto(null)}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ) : showCamera ? (
+                    <div className="space-y-2">
+                      {devices.length > 1 && (
+                        <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                          <SelectTrigger className="w-48 h-8 text-xs">
+                            <SelectValue placeholder="Select camera" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {devices.map((device, idx) => (
+                              <SelectItem key={device.deviceId} value={device.deviceId}>
+                                {device.label || `Camera ${idx + 1}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <div className="relative w-48 h-36 rounded-lg overflow-hidden bg-muted">
+                        <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                      </div>
+                      {enrollingBiometrics && (
+                        <div className="space-y-1">
+                          <Progress value={biometricProgress} className="h-2" />
+                          <p className="text-xs text-muted-foreground text-center">
+                            {Math.round(biometricProgress)}% - Keep looking at camera
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button type="button" size="sm" onClick={capturePhoto}>
+                          <Camera className="w-4 h-4 mr-1" />
+                          CAPTURE
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={stopCamera}>
+                          CANCEL
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" onClick={() => startCamera()}>
+                      <Camera className="w-4 h-4 mr-2" />
+                      CAPTURE PHOTO
+                    </Button>
+                  )}
+                </div>
+              </div>
+              
               <div className="space-y-2">
                 <Label>FIRST NAME *</Label>
                 <Input
                   value={formData.first_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, first_name: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value.toUpperCase() })}
                   className="input-field uppercase"
                   required
                 />
@@ -617,7 +664,7 @@ export default function PDLMasterlistPage() {
                 <Label>MIDDLE NAME</Label>
                 <Input
                   value={formData.middle_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, middle_name: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setFormData({ ...formData, middle_name: e.target.value.toUpperCase() })}
                   className="input-field uppercase"
                 />
               </div>
@@ -625,7 +672,7 @@ export default function PDLMasterlistPage() {
                 <Label>LAST NAME *</Label>
                 <Input
                   value={formData.last_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, last_name: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value.toUpperCase() })}
                   className="input-field uppercase"
                   required
                 />
@@ -634,9 +681,9 @@ export default function PDLMasterlistPage() {
                 <Label>SUFFIX</Label>
                 <Input
                   value={formData.suffix}
-                  onChange={(e) => setFormData(prev => ({ ...prev, suffix: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setFormData({ ...formData, suffix: e.target.value.toUpperCase() })}
                   className="input-field uppercase"
-                  placeholder="JR., SR., III, ETC."
+                  placeholder="JR, SR, III, etc."
                 />
               </div>
               <div className="space-y-2">
@@ -644,14 +691,20 @@ export default function PDLMasterlistPage() {
                 <Input
                   type="date"
                   value={formData.date_of_birth}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date_of_birth: e.target.value }))}
+                  onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
                   className="input-field"
                   required
                 />
               </div>
               <div className="space-y-2">
+                <Label>AGE</Label>
+                <div className="h-10 px-3 flex items-center rounded-md border border-border bg-muted/50 font-mono">
+                  {formData.date_of_birth ? `${calculateAge(formData.date_of_birth)} YEARS OLD` : '-'}
+                </div>
+              </div>
+              <div className="space-y-2">
                 <Label>GENDER *</Label>
-                <Select value={formData.gender} onValueChange={(val: 'male' | 'female') => setFormData(prev => ({ ...prev, gender: val }))}>
+                <Select value={formData.gender} onValueChange={(v) => setFormData({ ...formData, gender: v as any })}>
                   <SelectTrigger className="input-field">
                     <SelectValue />
                   </SelectTrigger>
@@ -662,17 +715,8 @@ export default function PDLMasterlistPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>AGE (AUTO-CALCULATED)</Label>
-                <Input
-                  value={formData.date_of_birth ? `${calculateAge(formData.date_of_birth)} YEARS OLD` : ''}
-                  className="input-field"
-                  disabled
-                  placeholder="ENTER DOB FIRST"
-                />
-              </div>
-              <div className="space-y-2">
                 <Label>STATUS *</Label>
-                <Select value={formData.status} onValueChange={(val: 'detained' | 'released' | 'transferred' | 'deceased') => setFormData(prev => ({ ...prev, status: val }))}>
+                <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v as any })}>
                   <SelectTrigger className="input-field">
                     <SelectValue />
                   </SelectTrigger>
@@ -685,63 +729,58 @@ export default function PDLMasterlistPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>DATE OF COMMITMENT *</Label>
+                <Label>DATE OF COMMIT *</Label>
                 <Input
                   type="date"
                   value={formData.date_of_commit}
-                  onChange={(e) => setFormData(prev => ({ ...prev, date_of_commit: e.target.value }))}
+                  onChange={(e) => setFormData({ ...formData, date_of_commit: e.target.value })}
                   className="input-field"
                   required
                 />
               </div>
-            </div>
-            
-            {/* Crimes/Offenses Section with paired case numbers */}
-            <div className="space-y-3">
-              <Label>CRIMES/OFFENSES COMMITTED</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={newCrime.offense}
-                  onChange={(e) => setNewCrime(prev => ({ ...prev, offense: e.target.value.toUpperCase() }))}
-                  className="input-field uppercase flex-1"
-                  placeholder="CRIME/OFFENSE"
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
-                />
-                <Input
-                  value={newCrime.case_number}
-                  onChange={(e) => setNewCrime(prev => ({ ...prev, case_number: e.target.value.toUpperCase() }))}
-                  className="input-field uppercase w-40"
-                  placeholder="CASE NO."
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCrime())}
-                />
-                <Button type="button" onClick={addCrime} variant="secondary" size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              {formData.crimes.length > 0 && (
+              
+              {/* Crimes Section */}
+              <div className="md:col-span-2 space-y-3">
+                <Label>CRIMES / OFFENSES COMMITTED</Label>
                 <div className="space-y-2">
                   {formData.crimes.map((crime, index) => (
-                    <div key={index} className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
-                      <div className="flex-1">
-                        <span className="text-sm font-medium text-foreground">{crime.offense}</span>
+                    <div key={index} className="flex gap-2 items-center p-2 rounded-lg bg-muted/30">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <span className="text-sm truncate">{crime.offense}</span>
+                        <span className="text-sm text-muted-foreground truncate">{crime.case_number || 'No case #'}</span>
                       </div>
-                      <Badge variant="outline" className="text-xs">
-                        {crime.case_number || 'NO CASE #'}
-                      </Badge>
-                      <button type="button" onClick={() => removeCrime(index)} className="hover:text-destructive p-1">
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeCrime(index)}>
                         <X className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
-              )}
+                <div className="flex gap-2">
+                  <Input
+                    value={newCrime.offense}
+                    onChange={(e) => setNewCrime({ ...newCrime, offense: e.target.value.toUpperCase() })}
+                    placeholder="Crime/Offense"
+                    className="input-field uppercase flex-1"
+                  />
+                  <Input
+                    value={newCrime.case_number}
+                    onChange={(e) => setNewCrime({ ...newCrime, case_number: e.target.value.toUpperCase() })}
+                    placeholder="Case Number"
+                    className="input-field uppercase flex-1"
+                  />
+                  <Button type="button" variant="outline" onClick={addCrime} disabled={!newCrime.offense.trim()}>
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
-
+            
             <DialogFooter>
               <Button type="button" variant="outline" onClick={resetForm}>
                 CANCEL
               </Button>
               <Button type="submit" className="btn-scanner">
+                <Check className="w-4 h-4 mr-2" />
                 {editingPDL ? 'UPDATE PDL' : 'ADD PDL'}
               </Button>
             </DialogFooter>
@@ -749,75 +788,84 @@ export default function PDLMasterlistPage() {
         </DialogContent>
       </Dialog>
 
-      {/* View Details Dialog */}
+      {/* View Dialog */}
       <Dialog open={!!viewingPDL} onOpenChange={() => setViewingPDL(null)}>
-        <DialogContent className="sm:max-w-lg glass-card border-border">
+        <DialogContent className="max-w-lg glass-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-xl">PDL DETAILS</DialogTitle>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <Eye className="w-6 h-6 text-primary" />
+              PDL DETAILS
+            </DialogTitle>
           </DialogHeader>
+          
           {viewingPDL && (
             <div className="space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-24 h-24 rounded-xl bg-muted overflow-hidden">
-                  {viewingPDL.photo_url ? (
-                    <img src={viewingPDL.photo_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-muted-foreground">
-                      {viewingPDL.first_name.charAt(0)}{viewingPDL.last_name.charAt(0)}
-                    </div>
-                  )}
+                {viewingPDL.photo_url ? (
+                  <img src={viewingPDL.photo_url} alt="" className="w-24 h-24 rounded-lg object-cover border border-border" />
+                ) : (
+                  <div className="w-24 h-24 rounded-lg bg-muted flex items-center justify-center">
+                    <Users className="w-10 h-10 text-muted-foreground" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-xl font-bold uppercase">
+                    {viewingPDL.last_name}, {viewingPDL.first_name} {viewingPDL.middle_name} {viewingPDL.suffix}
+                  </h3>
+                  <p className="text-primary font-mono">{viewingPDL.pdl_code}</p>
+                  {statusBadge(viewingPDL.status)}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">DATE OF BIRTH</p>
+                  <p className="font-medium">{new Date(viewingPDL.date_of_birth).toLocaleDateString()}</p>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-foreground uppercase">
-                    {viewingPDL.last_name}, {viewingPDL.first_name}
-                  </h3>
-                  <p className="font-mono text-primary">{viewingPDL.pdl_code}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {statusBadge(viewingPDL.status)}
-                    {hasBiometrics(viewingPDL.id) && (
-                      <Badge className="bg-success/20 text-success border-success/30">
-                        <Scan className="w-3 h-3 mr-1" />
-                        BIOMETRICS
-                      </Badge>
+                  <p className="text-muted-foreground">AGE</p>
+                  <p className="font-medium">{calculateAge(viewingPDL.date_of_birth)} YEARS OLD</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">GENDER</p>
+                  <p className="font-medium uppercase">{viewingPDL.gender}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">DATE OF COMMIT</p>
+                  <p className="font-medium">{new Date(viewingPDL.date_of_commit).toLocaleDateString()}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-muted-foreground">CRIMES / CASES</p>
+                  <div className="space-y-1 mt-1">
+                    {viewingPDL.crimes?.length > 0 ? (
+                      viewingPDL.crimes.map((crime, idx) => (
+                        <p key={idx} className="font-medium text-sm">
+                          {crime.offense} {crime.case_number && `(${crime.case_number})`}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">No crimes recorded</p>
                     )}
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">DATE OF BIRTH</p>
-                  <p className="text-foreground">{new Date(viewingPDL.date_of_birth).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">GENDER</p>
-                  <p className="text-foreground uppercase">{viewingPDL.gender}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">AGE</p>
-                  <p className="text-foreground">{calculateAge(viewingPDL.date_of_birth)} YEARS OLD</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">COMMITMENT DATE</p>
-                  <p className="text-foreground">{new Date(viewingPDL.date_of_commit).toLocaleDateString()}</p>
-                </div>
-                {viewingPDL.crimes && viewingPDL.crimes.length > 0 && (
-                  <div className="col-span-2">
-                    <p className="text-muted-foreground">CRIMES/OFFENSES & CASE NUMBERS</p>
-                    <div className="space-y-1 mt-1">
-                      {viewingPDL.crimes.map((crime, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <span className="text-xs text-foreground">{crime.offense}</span>
-                          <Badge variant="outline" className="text-xs">{crime.case_number || 'N/A'}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => {
+                  setShowIDCard(viewingPDL);
+                  setViewingPDL(null);
+                }}>
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  VIEW ID CARD
+                </Button>
+                <Button className="flex-1" onClick={() => {
+                  handleEdit(viewingPDL);
+                  setViewingPDL(null);
+                }}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  EDIT
+                </Button>
               </div>
-              <Button onClick={() => { setViewingPDL(null); setShowIDCard(viewingPDL); }} className="w-full">
-                <CreditCard className="w-4 h-4 mr-2" />
-                GENERATE ID CARD
-              </Button>
             </div>
           )}
         </DialogContent>
@@ -825,21 +873,44 @@ export default function PDLMasterlistPage() {
 
       {/* ID Card Dialog */}
       <Dialog open={!!showIDCard} onOpenChange={() => setShowIDCard(null)}>
-        <DialogContent className="sm:max-w-md glass-card border-border">
+        <DialogContent className="max-w-md glass-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-xl">PDL ID CARD</DialogTitle>
+            <DialogTitle className="text-xl flex items-center gap-2">
+              <CreditCard className="w-6 h-6 text-primary" />
+              PDL ID CARD
+            </DialogTitle>
           </DialogHeader>
+          
           {showIDCard && (
             <div className="space-y-4">
-              <div className="flex justify-center">
-                <div ref={idCardRef}>
-                  <PDLIDCard pdl={showIDCard} />
-                </div>
+              <div ref={idCardRef}>
+                <PDLIDCard pdl={showIDCard} />
               </div>
-              <Button onClick={handlePrintID} className="w-full btn-scanner">
-                <Download className="w-4 h-4 mr-2" />
-                PRINT ID CARD
-              </Button>
+              
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={handlePrintID}>
+                  <Download className="w-4 h-4 mr-2" />
+                  PRINT
+                </Button>
+                {!hasBiometrics(showIDCard.id) && (
+                  <Button className="flex-1 btn-scanner" onClick={() => {
+                    startBiometricEnrollment();
+                    setTimeout(() => runEnrollmentCapture(showIDCard.id), 500);
+                  }} disabled={faceLoading}>
+                    {faceLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Scan className="w-4 h-4 mr-2" />}
+                    ENROLL BIOMETRICS
+                  </Button>
+                )}
+                {hasBiometrics(showIDCard.id) && (
+                  <Button variant="outline" className="flex-1" onClick={() => {
+                    startBiometricEnrollment();
+                    setTimeout(() => runEnrollmentCapture(showIDCard.id), 500);
+                  }} disabled={faceLoading}>
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    RE-ENROLL
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
