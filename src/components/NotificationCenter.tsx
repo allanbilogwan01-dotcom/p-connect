@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, Clock, UserCheck, AlertTriangle, Check, Users } from 'lucide-react';
+import { Bell, X, Clock, UserCheck, AlertTriangle, Check, Users, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { getDashboardStats, getPDLVisitorLinks, getVisitors, getPDLs, getActiveSessions } from '@/lib/localStorage';
+import { useCameraContext } from '@/hooks/useCameraContext';
 import { format } from 'date-fns';
 
 export interface Notification {
@@ -162,6 +163,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 export function NotificationBell() {
   const context = useNotificationsSafe();
   const [open, setOpen] = useState(false);
+  const { isActive: isCameraActive } = useCameraContext();
 
   // If context is not available, render a simple bell without notifications
   if (!context) {
@@ -184,24 +186,45 @@ export function NotificationBell() {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="w-5 h-5 text-muted-foreground" />
-          <AnimatePresence>
-            {unreadCount > 0 && (
-              <motion.span
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs font-bold rounded-full flex items-center justify-center"
-              >
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </motion.span>
-            )}
-          </AnimatePresence>
-        </Button>
-      </PopoverTrigger>
+    <div className="flex items-center gap-2">
+      {/* Camera Active Indicator - Only shows when camera is actively streaming */}
+      <AnimatePresence>
+        {isCameraActive && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-destructive/10 border border-destructive/30"
+          >
+            <motion.div
+              className="w-2 h-2 rounded-full bg-destructive"
+              animate={{ opacity: [1, 0.4, 1] }}
+              transition={{ duration: 1, repeat: Infinity }}
+            />
+            <Camera className="w-3.5 h-3.5 text-destructive" />
+            <span className="text-xs font-medium text-destructive">LIVE</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="relative">
+            <Bell className="w-5 h-5 text-muted-foreground" />
+            <AnimatePresence>
+              {unreadCount > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs font-bold rounded-full flex items-center justify-center"
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </Button>
+        </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
         <div className="flex items-center justify-between p-3 border-b border-border">
           <h4 className="font-semibold text-foreground">Notifications</h4>
@@ -261,6 +284,7 @@ export function NotificationBell() {
         </ScrollArea>
       </PopoverContent>
     </Popover>
+    </div>
   );
 }
 
