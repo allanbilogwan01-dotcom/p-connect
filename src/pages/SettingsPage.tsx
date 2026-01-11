@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Save, RotateCcw, Building, Users, Scan, 
-  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown, Palette
+  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown, Palette, Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { SystemHealthDashboard } from '@/components/SystemHealthDashboard';
 import type { SystemSettings, RelationshipType } from '@/types';
 
 const CONJUGAL_ELIGIBLE: RelationshipType[] = [
@@ -176,8 +178,26 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Appearance Settings */}
-      <Card className="glass-card">
+      {/* Tabs for Settings and System Health */}
+      <Tabs defaultValue="settings" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="settings" className="flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            Settings
+          </TabsTrigger>
+          <TabsTrigger value="system" className="flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            System Health
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="system" className="mt-6">
+          <SystemHealthDashboard />
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-6 space-y-6">
+          {/* Appearance Settings */}
+          <Card className="glass-card">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <Palette className="w-5 h-5 text-primary" />
@@ -519,6 +539,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+        </TabsContent>
+      </Tabs>
 
       {/* Reset Confirmation */}
       <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
