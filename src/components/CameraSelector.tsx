@@ -21,13 +21,18 @@ export function useCameraDevices() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const { selectedDeviceId, setSelectedDeviceId } = useCameraContext();
   const [isLoading, setIsLoading] = useState(false);
+  const [hasEnumerated, setHasEnumerated] = useState(false);
 
   const refreshDevices = useCallback(async () => {
+    if (isLoading) return;
+    setIsLoading(true);
     try {
-      // Request permission first to get device labels
-      await navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
-        s.getTracks().forEach(t => t.stop());
-      });
+      // Request permission first to get device labels - but only once
+      if (!hasEnumerated) {
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        tempStream.getTracks().forEach(t => t.stop());
+        setHasEnumerated(true);
+      }
       
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = allDevices.filter(d => d.kind === 'videoinput');
@@ -38,8 +43,10 @@ export function useCameraDevices() {
       }
     } catch (error) {
       console.error('Error enumerating devices:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [selectedDeviceId, setSelectedDeviceId]);
+  }, [selectedDeviceId, setSelectedDeviceId, isLoading, hasEnumerated]);
 
   useEffect(() => {
     refreshDevices();

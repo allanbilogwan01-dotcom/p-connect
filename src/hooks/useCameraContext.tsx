@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 
 interface CameraContextValue {
   isActive: boolean;
@@ -12,17 +12,43 @@ interface CameraContextValue {
 
 const CameraContext = createContext<CameraContextValue | null>(null);
 
+// Track active streams globally for accurate favicon
+let globalActiveStreams = 0;
+
+function updateFavicon(isActive: boolean) {
+  const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+  if (link) {
+    if (isActive && globalActiveStreams > 0) {
+      link.href = '/camera-active.svg';
+      document.title = '📹 WATCHGUARD - CAMERA ACTIVE';
+    } else {
+      link.href = '/watchguard-icon.svg';
+      document.title = 'WATCHGUARD - JAIL VISITOR MANAGEMENT';
+    }
+  }
+}
+
 export function CameraProvider({ children }: { children: React.ReactNode }) {
   const [activeCount, setActiveCount] = useState(0);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const isActive = activeCount > 0;
 
   const incrementActive = useCallback(() => {
-    setActiveCount(prev => prev + 1);
+    setActiveCount(prev => {
+      const next = prev + 1;
+      globalActiveStreams = next;
+      updateFavicon(next > 0);
+      return next;
+    });
   }, []);
 
   const decrementActive = useCallback(() => {
-    setActiveCount(prev => Math.max(0, prev - 1));
+    setActiveCount(prev => {
+      const next = Math.max(0, prev - 1);
+      globalActiveStreams = next;
+      updateFavicon(next > 0);
+      return next;
+    });
   }, []);
 
   const setActive = useCallback((active: boolean) => {
@@ -33,32 +59,26 @@ export function CameraProvider({ children }: { children: React.ReactNode }) {
     }
   }, [incrementActive, decrementActive]);
 
-  // Update favicon based on camera state - only show indicator when camera is actually active
+  // Reset favicon on unmount
   useEffect(() => {
-    const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
-    if (link) {
-      if (isActive) {
-        // Camera is active - show camera indicator in favicon
-        link.href = '/camera-active.svg';
-        document.title = '📹 WATCHGUARD - CAMERA ACTIVE';
-      } else {
-        // Camera is not active - show normal favicon
-        link.href = '/watchguard-icon.svg';
-        document.title = 'WATCHGUARD - JAIL VISITOR MANAGEMENT';
-      }
-    }
-  }, [isActive]);
+    return () => {
+      globalActiveStreams = 0;
+      updateFavicon(false);
+    };
+  }, []);
+
+  const value = useMemo(() => ({ 
+    isActive, 
+    setActive, 
+    activeCount, 
+    incrementActive, 
+    decrementActive,
+    selectedDeviceId,
+    setSelectedDeviceId
+  }), [isActive, setActive, activeCount, incrementActive, decrementActive, selectedDeviceId]);
 
   return (
-    <CameraContext.Provider value={{ 
-      isActive, 
-      setActive, 
-      activeCount, 
-      incrementActive, 
-      decrementActive,
-      selectedDeviceId,
-      setSelectedDeviceId
-    }}>
+    <CameraContext.Provider value={value}>
       {children}
     </CameraContext.Provider>
   );

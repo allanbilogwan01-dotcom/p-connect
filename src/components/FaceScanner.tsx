@@ -212,13 +212,6 @@ export default function FaceScanner({
       exit={{ opacity: 0, scale: 0.95 }}
       className="flex flex-col items-center gap-4"
     >
-      {/* Camera Selector */}
-      <CameraSelector 
-        onStream={handleCameraStream}
-        autoStart={false}
-        className="mb-2"
-      />
-      
       {/* Video Container */}
       <div className="relative w-80 h-80 rounded-2xl overflow-hidden bg-muted border-2 border-primary/30">
         {isLoading && (
@@ -231,7 +224,7 @@ export default function FaceScanner({
         {!isScanning && !isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <Camera className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <p className="text-sm text-muted-foreground">CAMERA NOT STARTED</p>
+            <p className="text-sm text-muted-foreground">CLICK START CAMERA</p>
           </div>
         )}
         
@@ -240,7 +233,7 @@ export default function FaceScanner({
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover ${!isScanning ? 'hidden' : ''}`}
           style={{ transform: 'scaleX(-1)' }}
         />
         <canvas ref={canvasRef} className="hidden" />
