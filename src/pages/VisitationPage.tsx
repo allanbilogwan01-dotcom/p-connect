@@ -496,8 +496,17 @@ export default function VisitationPage() {
                   <div className="space-y-4">
                     {showFaceScanner ? (
                       <ModernFaceScanner
-                        onMatch={handleFaceMatch}
-                        onCancel={() => setShowFaceScanner(false)}
+                        mode="match"
+                        onSuccess={(result) => {
+                          if (result.success && result.visitorId) {
+                            const visitor = visitors.find(v => v.id === result.visitorId);
+                            if (visitor) {
+                              handleFaceMatch(visitor, result.score || 0.9);
+                            }
+                          }
+                          setShowFaceScanner(false);
+                        }}
+                        onError={() => setShowFaceScanner(false)}
                       />
                     ) : (
                       <Button 

@@ -65,12 +65,8 @@ export default function PDLMasterlistPage() {
   const { toast } = useToast();
   
   const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
-  const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
   const { setActive: setCameraActive } = useCameraContext();
-
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
+  const { isHealthy, checkHealth, enroll } = useBiometrics();
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -152,8 +148,9 @@ export default function PDLMasterlistPage() {
   };
 
   const startBiometricEnrollment = useCallback(async () => {
-    if (!isLoaded) {
-      toast({ title: 'LOADING', description: 'Face detection is loading...' });
+    if (!isHealthy) {
+      await checkHealth();
+      toast({ title: 'CHECKING', description: 'Checking biometrics service...' });
       return;
     }
 
@@ -182,42 +179,10 @@ export default function PDLMasterlistPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDeviceId, toast, setCameraActive]);
+  }, [isHealthy, checkHealth, selectedDeviceId, toast, setCameraActive]);
 
-  const runEnrollmentCapture = useCallback(async (pdlId: string) => {
-    if (!videoRef.current || !isLoaded || !enrollingBiometrics) return;
-
-    const detection = await detectFace(videoRef.current);
-    
-    if (detection) {
-      const embedding = descriptorToArray(detection.descriptor);
-      
-      setCapturedEmbeddings(prev => {
-        const newEmbeddings = [...prev, embedding];
-        const progress = (newEmbeddings.length / 5) * 100;
-        setBiometricProgress(progress);
-        
-        if (newEmbeddings.length >= 5) {
-          saveBiometric(pdlId, newEmbeddings, newEmbeddings.map(() => 0.9));
-          stopCamera();
-          
-          toast({
-            title: 'BIOMETRICS ENROLLED',
-            description: 'Face recognition data has been saved successfully.',
-          });
-          
-          return newEmbeddings;
-        }
-        
-        setTimeout(() => runEnrollmentCapture(pdlId), 500);
-        return newEmbeddings;
-      });
-    } else {
-      if (enrollingBiometrics) {
-        setTimeout(() => runEnrollmentCapture(pdlId), 200);
-      }
-    }
-  }, [isLoaded, enrollingBiometrics, detectFace, stopCamera, toast]);
+  // Note: PDL biometric enrollment removed per privacy requirements
+  // Only visitors can have biometrics enrolled
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -239,7 +204,8 @@ export default function PDLMasterlistPage() {
       }
     } else {
       const newPDL = createPDL({ 
-        ...formData, 
+        ...formData,
+        sex: formData.gender,
         status: 'detained',
         photo_url: capturedPhoto || undefined,
       });
@@ -360,7 +326,7 @@ export default function PDLMasterlistPage() {
             last_name: pdlData.last_name,
             suffix: pdlData.suffix,
             date_of_birth: pdlData.date_of_birth,
-            gender: pdlData.gender || 'male',
+            sex: pdlData.gender || 'male',
             date_of_commit: pdlData.date_of_commit || new Date().toISOString().split('T')[0],
             crimes: pdlData.crimes || [],
             status: 'detained',
