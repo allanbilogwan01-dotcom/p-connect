@@ -36,7 +36,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
 import { VisitorIDCard } from '@/components/IDCard';
-import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
+import { useBiometrics } from '@/hooks/useBiometrics';
 import { useCameraDevices } from '@/components/CameraSelector';
 import { RELATIONSHIP_LABELS, CATEGORY_LABELS } from '@/types';
 import { exportVisitorsToExcel, parseVisitorsFromExcel, downloadVisitorTemplate, calculateAge } from '@/lib/excelUtils';

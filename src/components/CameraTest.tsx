@@ -1,16 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Camera, CheckCircle2, XCircle, RefreshCw, Loader2, 
-  Scan, Video, Monitor, AlertTriangle, Zap
+  Video, Monitor, AlertTriangle, Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { CameraSelector } from '@/components/CameraSelector';
-import { useFaceDetection } from '@/hooks/useFaceDetection';
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { checkBiometricsHealth, checkQuality } from '@/lib/api/biometrics';
 type TestStatus = 'idle' | 'testing' | 'passed' | 'failed';
 
 interface TestResult {
@@ -23,19 +22,21 @@ interface TestResult {
 export function CameraTest() {
   const [isRunning, setIsRunning] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [streamActive, setStreamActive] = useState(false);
+  const [biometricsAvailable, setBiometricsAvailable] = useState<boolean | null>(null);
   const [tests, setTests] = useState<TestResult[]>([
     { name: 'Camera Access', status: 'idle', message: 'Not tested' },
     { name: 'Video Stream', status: 'idle', message: 'Not tested' },
-    { name: 'Model Loading', status: 'idle', message: 'Not tested' },
+    { name: 'Biometrics Service', status: 'idle', message: 'Not tested' },
+    { name: 'Image Quality', status: 'idle', message: 'Not tested' },
     { name: 'Face Detection', status: 'idle', message: 'Not tested' },
-    { name: 'Recognition Speed', status: 'idle', message: 'Not tested' },
   ]);
   const [overallProgress, setOverallProgress] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const { loadModels, detectFace, isLoaded, isLoading } = useFaceDetection();
 
   const updateTest = useCallback((index: number, update: Partial<TestResult>) => {
     setTests(prev => prev.map((t, i) => i === index ? { ...t, ...update } : t));
@@ -50,6 +51,37 @@ export function CameraTest() {
       videoRef.current.srcObject = null;
     }
     setStreamActive(false);
+  }, []);
+
+  // Enumerate camera devices
+  useEffect(() => {
+    async function loadDevices() {
+      try {
+        // Request permission first
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        tempStream.getTracks().forEach(t => t.stop());
+        
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = allDevices.filter(d => d.kind === 'videoinput');
+        setDevices(videoDevices);
+        
+        if (videoDevices.length > 0 && !selectedDeviceId) {
+          setSelectedDeviceId(videoDevices[0].deviceId);
+        }
+      } catch (err) {
+        console.error('Failed to enumerate devices:', err);
+      }
+    }
+    loadDevices();
+  }, []);
+
+  // Check biometrics service health on mount
+  useEffect(() => {
+    async function checkHealth() {
+      const result = await checkBiometricsHealth();
+      setBiometricsAvailable(result.ok);
+    }
+    checkHealth();
   }, []);
 
   const startCamera = useCallback(async (deviceId?: string): Promise<boolean> => {
@@ -79,6 +111,22 @@ export function CameraTest() {
     }
   }, [stopCamera]);
 
+  // Capture frame from video as base64
+  const captureFrame = useCallback((): string | null => {
+    if (!videoRef.current || !canvasRef.current) return null;
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]; // Return base64 only
+  }, []);
+
   const runTests = async () => {
     setIsRunning(true);
     setOverallProgress(0);
@@ -87,11 +135,11 @@ export function CameraTest() {
     setTests(prev => prev.map(t => ({ ...t, status: 'idle', message: 'Waiting...' })));
     
     // Test 1: Camera Access
-    updateTest(0, { status: 'testing', message: 'Requesting camera permission...' });
+    updateTest(0, { status: 'testing', message: 'Checking camera permissions...' });
     const startTime1 = Date.now();
     try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const cameras = devices.filter(d => d.kind === 'videoinput');
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = allDevices.filter(d => d.kind === 'videoinput');
       if (cameras.length === 0) throw new Error('No cameras found');
       updateTest(0, { 
         status: 'passed', 
@@ -122,65 +170,98 @@ export function CameraTest() {
     }
     setOverallProgress(40);
 
-    // Test 3: Model Loading
-    updateTest(2, { status: 'testing', message: 'Loading face detection models...' });
+    // Wait for video to stabilize
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Test 3: Biometrics Service Health
+    updateTest(2, { status: 'testing', message: 'Connecting to biometrics server...' });
     const startTime3 = Date.now();
-    try {
-      await loadModels();
+    const healthResult = await checkBiometricsHealth();
+    if (healthResult.ok && healthResult.data) {
       updateTest(2, { 
         status: 'passed', 
-        message: 'Models loaded successfully',
+        message: `Server v${healthResult.data.version} - Models loaded`,
         duration: Date.now() - startTime3
       });
-    } catch (err) {
-      updateTest(2, { status: 'failed', message: 'Failed to load models' });
-      setIsRunning(false);
-      return;
+      setBiometricsAvailable(true);
+    } else {
+      updateTest(2, { 
+        status: 'failed', 
+        message: healthResult.error || 'Cannot connect to biometrics server'
+      });
+      setBiometricsAvailable(false);
+      // Continue anyway - other tests can still run
     }
     setOverallProgress(60);
 
-    // Wait for video to be ready
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Test 4: Face Detection
-    updateTest(3, { status: 'testing', message: 'Detecting faces in video...' });
+    // Test 4: Image Quality Check
+    updateTest(3, { status: 'testing', message: 'Analyzing image quality...' });
     const startTime4 = Date.now();
-    if (videoRef.current) {
-      const detection = await detectFace(videoRef.current);
-      if (detection) {
-        const confidence = (detection.detection.score * 100).toFixed(1);
-        updateTest(3, { 
-          status: 'passed', 
-          message: `Face detected (${confidence}% confidence)`,
-          duration: Date.now() - startTime4
-        });
+    const frame = captureFrame();
+    if (frame && biometricsAvailable !== false) {
+      const qualityResult = await checkQuality(frame);
+      if (qualityResult.ok && qualityResult.data) {
+        const data = qualityResult.data;
+        if (data.ok) {
+          updateTest(3, { 
+            status: 'passed', 
+            message: `Quality score: ${(data.overall_score * 100).toFixed(0)}%`,
+            duration: Date.now() - startTime4
+          });
+        } else {
+          updateTest(3, { 
+            status: 'failed', 
+            message: data.reason || 'Quality check failed'
+          });
+        }
       } else {
         updateTest(3, { 
           status: 'failed', 
-          message: 'No face detected - ensure face is visible' 
+          message: qualityResult.error || 'Quality check unavailable'
         });
       }
+    } else if (!frame) {
+      updateTest(3, { status: 'failed', message: 'Failed to capture frame' });
+    } else {
+      updateTest(3, { status: 'failed', message: 'Biometrics server unavailable' });
     }
     setOverallProgress(80);
 
-    // Test 5: Recognition Speed
-    updateTest(4, { status: 'testing', message: 'Measuring detection speed...' });
-    if (videoRef.current) {
-      const times: number[] = [];
-      for (let i = 0; i < 3; i++) {
-        const start = performance.now();
-        await detectFace(videoRef.current);
-        times.push(performance.now() - start);
-        await new Promise(resolve => setTimeout(resolve, 100));
+    // Test 5: Face Detection (via quality endpoint which includes detection)
+    updateTest(4, { status: 'testing', message: 'Detecting face in frame...' });
+    const startTime5 = Date.now();
+    const frame2 = captureFrame();
+    if (frame2 && biometricsAvailable !== false) {
+      const qualityResult = await checkQuality(frame2);
+      if (qualityResult.ok && qualityResult.data) {
+        const data = qualityResult.data;
+        if (data.metrics.num_faces === 1) {
+          const confidence = (data.face_confidence * 100).toFixed(0);
+          updateTest(4, { 
+            status: 'passed', 
+            message: `Face detected (${confidence}% confidence)`,
+            duration: Date.now() - startTime5
+          });
+        } else if (data.metrics.num_faces === 0) {
+          updateTest(4, { 
+            status: 'failed', 
+            message: 'No face detected - position face in camera view'
+          });
+        } else {
+          updateTest(4, { 
+            status: 'failed', 
+            message: `Multiple faces (${data.metrics.num_faces}) - only one face allowed`
+          });
+        }
+      } else {
+        updateTest(4, { status: 'failed', message: 'Detection unavailable' });
       }
-      const avgTime = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
-      const fps = Math.round(1000 / avgTime);
-      updateTest(4, { 
-        status: avgTime < 500 ? 'passed' : 'failed', 
-        message: `${avgTime}ms avg (${fps} FPS)`,
-        duration: avgTime
-      });
+    } else if (!frame2) {
+      updateTest(4, { status: 'failed', message: 'Failed to capture frame' });
+    } else {
+      updateTest(4, { status: 'failed', message: 'Biometrics server unavailable' });
     }
+    
     setOverallProgress(100);
     setIsRunning(false);
   };
@@ -235,17 +316,33 @@ export function CameraTest() {
                 </div>
               )}
             </div>
+            
+            {/* Hidden canvas for frame capture */}
+            <canvas ref={canvasRef} className="hidden" />
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">SELECT CAMERA</label>
-              <CameraSelector
-                onDeviceSelect={(deviceId) => {
+              <Select 
+                value={selectedDeviceId} 
+                onValueChange={(deviceId) => {
                   setSelectedDeviceId(deviceId);
                   if (streamActive) {
                     startCamera(deviceId);
                   }
                 }}
-              />
+              >
+                <SelectTrigger className="w-full">
+                  <Camera className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Select a camera" />
+                </SelectTrigger>
+                <SelectContent>
+                  {devices.map((device, index) => (
+                    <SelectItem key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Camera ${index + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <Button 

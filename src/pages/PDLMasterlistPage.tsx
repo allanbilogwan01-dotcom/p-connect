@@ -35,7 +35,7 @@ import { getPDLs, createPDL, updatePDL, createAuditLog, saveBiometric, getBiomet
 import { useAuth } from '@/contexts/AuthContext';
 
 import { useCameraDevices } from '@/components/CameraSelector';
-import { useFaceDetection, descriptorToArray } from '@/hooks/useFaceDetection';
+import { useBiometrics } from '@/hooks/useBiometrics';
 import { useCameraContext } from '@/hooks/useCameraContext';
 import { exportPDLsToExcel, parsePDLsFromExcel, downloadPDLTemplate, calculateAge } from '@/lib/excelUtils';
 import type { PDL, CrimeEntry } from '@/types';
