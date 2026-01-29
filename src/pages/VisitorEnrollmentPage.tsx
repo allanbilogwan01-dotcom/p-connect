@@ -76,13 +76,9 @@ export default function VisitorEnrollmentPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { isLoaded, isLoading: faceLoading, loadModels, detectFace } = useFaceDetection();
+  const { isHealthy, checkHealth, enroll } = useBiometrics();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
   const pdls = getPDLs();
-
-  useEffect(() => {
-    loadModels();
-  }, [loadModels]);
 
   const [formData, setFormData] = useState({
     first_name: '',
@@ -161,8 +157,9 @@ export default function VisitorEnrollmentPage() {
   };
 
   const startBiometricEnrollment = useCallback(async (visitorId: string) => {
-    if (!isLoaded) {
-      toast({ title: 'Loading', description: 'Face detection is loading...' });
+    if (!isHealthy) {
+      await checkHealth();
+      toast({ title: 'Checking', description: 'Checking biometrics service...' });
       return;
     }
 
@@ -183,6 +180,7 @@ export default function VisitorEnrollmentPage() {
       setCapturedEmbeddings([]);
       setBiometricProgress(0);
       
+      // Start server-side enrollment capture
       runEnrollmentCapture(visitorId);
     } catch (error) {
       toast({
@@ -191,45 +189,59 @@ export default function VisitorEnrollmentPage() {
         variant: 'destructive',
       });
     }
-  }, [isLoaded, selectedDeviceId, toast]);
+  }, [isHealthy, checkHealth, selectedDeviceId, toast]);
 
   const runEnrollmentCapture = async (visitorId: string) => {
-    if (!videoRef.current || !isLoaded) return;
+    if (!videoRef.current || !isHealthy) return;
 
-    const detection = await detectFace(videoRef.current);
+    // Capture frame and check quality via server
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    const frame = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
     
-    if (detection) {
-      const embedding = descriptorToArray(detection.descriptor);
-      
+    if (frame) {
       setCapturedEmbeddings(prev => {
-        const newEmbeddings = [...prev, embedding];
-        const progress = (newEmbeddings.length / 5) * 100;
+        const newFrames = [...prev.map(() => frame), frame];
+        const progress = (newFrames.length / 5) * 100;
         setBiometricProgress(progress);
         
-        if (newEmbeddings.length >= 5) {
-          saveBiometric(visitorId, newEmbeddings, newEmbeddings.map(() => 0.9));
-          stopCamera();
-          
-          createAuditLog({
-            user_id: user?.id || '',
-            action: 'visitor_enrolled',
-            target_type: 'visitor',
-            target_id: visitorId,
+        if (newFrames.length >= 5) {
+          // Enroll via server API
+          enroll(visitorId, newFrames).then(result => {
+            stopCamera();
+            
+            if (result.success) {
+              createAuditLog({
+                user_id: user?.id || '',
+                action: 'visitor_enrolled',
+                target_type: 'visitor',
+                target_id: visitorId,
+              });
+              
+              toast({
+                title: 'Biometrics Enrolled',
+                description: 'Face recognition data has been saved successfully.',
+              });
+              
+              setEnrollmentStep('link');
+            } else {
+              toast({
+                title: 'Enrollment Failed',
+                description: result.error || 'Please try again.',
+                variant: 'destructive',
+              });
+            }
           });
           
-          toast({
-            title: 'Biometrics Enrolled',
-            description: 'Face recognition data has been saved successfully.',
-          });
-          
-          // Move to link step
-          setEnrollmentStep('link');
-          
-          return newEmbeddings;
+          return [[1]] as any; // Placeholder to indicate complete
         }
         
         setTimeout(() => runEnrollmentCapture(visitorId), 500);
-        return newEmbeddings;
+        return [[...prev.flat(), 1]] as any;
       });
     } else {
       if (enrollingBiometrics) {
@@ -271,7 +283,8 @@ export default function VisitorEnrollmentPage() {
       resetForm();
     } else {
       const newVisitor = createVisitor({ 
-        ...uppercaseFormData, 
+        ...uppercaseFormData,
+        sex: uppercaseFormData.gender,
         status: 'active',
         photo_url: capturedPhoto || undefined,
       });
@@ -492,7 +505,7 @@ export default function VisitorEnrollmentPage() {
             last_name: visitorData.last_name,
             suffix: visitorData.suffix,
             date_of_birth: visitorData.date_of_birth,
-            gender: visitorData.gender || 'male',
+            sex: visitorData.gender || 'male',
             contact_number: visitorData.contact_number || '',
             address: visitorData.address || '',
             valid_id_type: visitorData.valid_id_type,
@@ -664,7 +677,7 @@ export default function VisitorEnrollmentPage() {
                             setEnrollmentStep('biometric');
                             setIsDialogOpen(true);
                           }}
-                          disabled={faceLoading}
+                          disabled={!isHealthy}
                         >
                           <Scan className="w-4 h-4" />
                         </Button>
@@ -910,7 +923,7 @@ export default function VisitorEnrollmentPage() {
               
               <div className="flex flex-col items-center gap-4">
                 <div className="relative w-80 h-80 rounded-2xl overflow-hidden bg-muted border-2 border-primary/30">
-                  {faceLoading && (
+                  {!isHealthy && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-10">
                       <Loader2 className="w-10 h-10 text-primary animate-spin mb-3" />
                       <p className="text-sm text-muted-foreground">Loading face detection...</p>
@@ -976,7 +989,7 @@ export default function VisitorEnrollmentPage() {
                     <Button 
                       onClick={() => newVisitorId && startBiometricEnrollment(newVisitorId)}
                       className="btn-scanner"
-                      disabled={faceLoading || !newVisitorId}
+                      disabled={!isHealthy || !newVisitorId}
                     >
                       <Scan className="w-4 h-4 mr-2" />
                       Start Enrollment
@@ -1152,7 +1165,7 @@ export default function VisitorEnrollmentPage() {
                     }}
                     variant="secondary"
                     className="flex-1"
-                    disabled={faceLoading}
+                    disabled={!isHealthy}
                   >
                     <Scan className="w-4 h-4 mr-2" />
                     Enroll Face
