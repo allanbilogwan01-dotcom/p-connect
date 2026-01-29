@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Save, RotateCcw, Building, Users, Scan, 
-  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown, Palette, Activity
+  Database, Shield, AlertTriangle, HardDrive, Download, Info, FolderDown, Palette, Activity, Camera
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { RELATIONSHIP_LABELS } from '@/types';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { SystemHealthDashboard } from '@/components/SystemHealthDashboard';
+import { CameraTest } from '@/components/CameraTest';
 import type { SystemSettings, RelationshipType } from '@/types';
 
 const CONJUGAL_ELIGIBLE: RelationshipType[] = [
@@ -180,16 +181,24 @@ export default function SettingsPage() {
 
       {/* Tabs for Settings and System Health */}
       <Tabs defaultValue="settings" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+        <TabsList className="grid w-full grid-cols-3 max-w-lg">
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
             Settings
+          </TabsTrigger>
+          <TabsTrigger value="camera" className="flex items-center gap-2">
+            <Camera className="w-4 h-4" />
+            Camera Test
           </TabsTrigger>
           <TabsTrigger value="system" className="flex items-center gap-2">
             <Activity className="w-4 h-4" />
             System Health
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="camera" className="mt-6">
+          <CameraTest />
+        </TabsContent>
 
         <TabsContent value="system" className="mt-6">
           <SystemHealthDashboard />
